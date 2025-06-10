@@ -1,81 +1,108 @@
-# Clean Architecture Structure
+# Hexagonal Architecture (Ports & Adapters) Structure
 
 src/main/java/com/vissoft/vn/dbdocs/
 ├── DbdocsApplication.java
 ├── package-info.java               # Package documentation
 ├── domain/                         # Domain Layer (Core Business Logic)
 │   ├── package-info.java          # Domain layer documentation
-│   ├── entities/                  # Business Entities
-│   │   └── package-info.java      # Entities documentation
-│   ├── repositories/              # Repository Interfaces (Contracts)
-│   │   └── package-info.java      # Repositories documentation
-│   └── services/                  # Domain Services
+│   ├── model/                     # Domain Models/Entities
+│   │   └── package-info.java      # Domain models documentation
+│   ├── repository/                # Domain Repository Interfaces
+│   │   └── package-info.java      # Domain repositories documentation
+│   └── service/                   # Domain Services
 │       └── package-info.java      # Domain services documentation
-├── application/                   # Application Layer (Use Cases)
+├── application/                   # Application Layer (Use Cases & Ports)
 │   ├── package-info.java          # Application layer documentation
-│   ├── usecases/                 # Use Cases / Business Logic
+│   ├── dto/                      # Application DTOs
+│   │   └── package-info.java      # Application DTOs documentation
+│   ├── usecase/                  # Use Cases (Business Workflows)
 │   │   └── package-info.java      # Use cases documentation
-│   ├── services/                 # Application Services
-│   │   └── package-info.java      # Application services documentation
-│   └── dtos/                     # Data Transfer Objects
-│       └── package-info.java      # DTOs documentation
-├── infrastructure/               # Infrastructure Layer (External Concerns)
+│   └── port/                     # Application Ports (Interfaces)
+│       └── package-info.java      # Ports documentation
+├── infrastructure/               # Infrastructure Layer (Adapters)
 │   ├── package-info.java          # Infrastructure layer documentation
-│   ├── persistence/              # Repository Implementations
-│   │   └── package-info.java      # Persistence documentation
-│   ├── config/                  # Configuration Classes
-│   │   └── package-info.java      # Configuration documentation
-│   └── external/                # External Services (APIs, etc.)
-│       └── package-info.java      # External services documentation
-└── presentation/                # Presentation Layer (Controllers, UI)
-    ├── package-info.java          # Presentation layer documentation
-    ├── controllers/             # REST Controllers
-    │   └── package-info.java      # Controllers documentation
-    ├── middlewares/             # Middlewares/Filters
-    │   └── package-info.java      # Middlewares documentation
+│   ├── persistence/              # Persistence Adapters
+│   │   ├── package-info.java      # Persistence documentation
+│   │   ├── entity/              # JPA Entities
+│   │   │   └── package-info.java  # JPA entities documentation
+│   │   └── repository/          # Repository Adapters
+│   │       └── package-info.java  # Repository adapters documentation
+│   └── config/                  # Configuration Classes
+│       └── package-info.java      # Configuration documentation
+└── interface/                   # Interface Layer (External Adapters)
+    ├── package-info.java          # Interface layer documentation
+    ├── rest/                     # REST Adapters
+    │   ├── package-info.java      # REST documentation
+    │   └── dto/                  # REST DTOs
+    │       └── package-info.java  # REST DTOs documentation
     └── exception/               # Exception Handlers
         └── package-info.java      # Exception handlers documentation
 
 ## Mô tả từng layer:
 
 ### 1. Domain Layer (domain/)
-- **entities/**: Chứa các business entities, domain models
-- **repositories/**: Chứa các interface repository (contracts)
-- **services/**: Chứa các domain services, business rules
+- **model/**: Chứa các domain models/entities - pure business objects
+- **repository/**: Chứa các domain repository interfaces
+- **service/**: Chứa các domain services với business rules
 
 ### 2. Application Layer (application/)
-- **usecases/**: Chứa các use cases, orchestrate business logic
-- **services/**: Chứa các application services
-- **dtos/**: Chứa các Data Transfer Objects cho việc truyền dữ liệu
+- **dto/**: Chứa các Application DTOs cho data transfer
+- **usecase/**: Chứa các use cases - business workflows và orchestration
+- **port/**: Chứa các port interfaces (contracts với external systems)
 
 ### 3. Infrastructure Layer (infrastructure/)
-- **persistence/**: Chứa implementation của repositories, database access
-- **config/**: Chứa các configuration classes (Spring Config, Database Config, etc.)
-- **external/**: Chứa các services giao tiếp với external systems
+- **persistence/entity/**: Chứa JPA entities và database models
+- **persistence/repository/**: Chứa repository adapters implement ports
+- **config/**: Chứa các configuration classes (Spring Config, etc.)
 
-### 4. Presentation Layer (presentation/)
-- **controllers/**: Chứa các REST controllers
-- **middlewares/**: Chứa các middleware, filters
+### 4. Interface Layer (interface/)
+- **rest/**: Chứa REST controllers và HTTP adapters
+- **rest/dto/**: Chứa REST-specific DTOs (requests/responses)
 - **exception/**: Chứa global exception handlers
 
-## Nguyên tắc Dependency:
+## Nguyên tắc Dependency (Hexagonal Architecture):
 
 ```
-Presentation → Application → Domain ← Infrastructure
+Interface → Application → Domain ← Infrastructure
+     ↓           ↓          ↑           ↑
+   (HTTP)    (Use Cases) (Models)   (Database)
 ```
 
-- **Domain** không phụ thuộc vào layer nào khác
-- **Application** chỉ phụ thuộc vào Domain
-- **Infrastructure** phụ thuộc vào Domain (implement interfaces)
-- **Presentation** phụ thuộc vào Application và Domain
+### Dependency Rules:
+- **Domain**: Không phụ thuộc vào layer nào - pure business logic
+- **Application**: Chỉ phụ thuộc vào Domain - chứa use cases và ports
+- **Infrastructure**: Implement các ports từ Application layer
+- **Interface**: Phụ thuộc vào Application layer để call use cases
 
-## Lợi ích:
+### Key Principles:
+- **Domain**: Không import Spring hay JPA
+- **Application**: Chứa logic use-case, chỉ phụ thuộc vào domain
+- **Infrastructure**: Chỉ chứa các adapter cụ thể (Spring Data JPA)
+- **Interface**: Controllers, mapping từ HTTP → DTO → use-case
 
-1. **Separation of Concerns**: Mỗi layer có trách nhiệm riêng biệt
-2. **Testability**: Dễ dàng unit test từng layer độc lập
-3. **Maintainability**: Dễ bảo trì và mở rộng
-4. **Flexibility**: Dễ thay đổi implementation mà không ảnh hưởng business logic
-5. **Independence**: Business logic không phụ thuộc vào framework hay external systems
+## Lợi ích của Hexagonal Architecture:
+
+1. **Separation of Concerns**: Mỗi layer có trách nhiệm rõ ràng và độc lập
+2. **Testability**: Dễ dàng test business logic mà không cần framework
+3. **Flexibility**: Dễ thay đổi database, web framework mà không ảnh hưởng business logic
+4. **Independence**: Business logic hoàn toàn độc lập với external concerns
+5. **Maintainability**: Code structure rõ ràng, dễ bảo trì và mở rộng
+6. **Domain-Driven**: Focus vào business domain, không bị ràng buộc bởi technical constraints
+
+## Port & Adapter Pattern:
+
+### Ports (Interfaces):
+- **Primary Ports**: Use case interfaces (called by external adapters)
+- **Secondary Ports**: Repository, external service interfaces (implemented by infrastructure)
+
+### Adapters:
+- **Primary Adapters**: REST controllers, CLI, messaging consumers
+- **Secondary Adapters**: Database repositories, external API clients, file systems
+
+### Example Flow:
+```
+HTTP Request → REST Controller → Use Case → Domain Service → Repository Port → JPA Repository → Database
+```
 
 ## Package Documentation:
 
