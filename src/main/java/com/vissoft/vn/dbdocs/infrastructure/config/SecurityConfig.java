@@ -15,6 +15,7 @@ public class SecurityConfig {
         http
                 .authorizeHttpRequests(auth->auth.anyRequest().authenticated())
                 .oauth2Login(Customizer.withDefaults());
+        // Enable CSRF prot
         return http.build();
     }
 }
