@@ -1,0 +1,35 @@
+spring:
+  application:
+    name: dbdocs
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_OAUTH2_CLIENT_ID}
+            client-secret: ${GOOGLE_OAUTH2_CLIENT_SECRET}
+            scope: profile, email
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+          github:
+            client-id: ${GITHUB_OAUTH2_CLIENT_ID}
+            client-secret: ${GITHUB_OAUTH2_CLIENT_SECRET}
+            scope: read:user,user:email
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+        provider:
+          google:
+            authorization-uri: https://accounts.google.com/o/oauth2/auth
+            token-uri: https://oauth2.googleapis.com/token
+            user-info-uri: https://www.googleapis.com/oauth2/v3/userinfo
+            user-name-attribute: sub
+
+  datasource:
+    url: ${DBDOCS_DB_URL}
+    username: ${DBDOCS_DB_USERNAME}
+    password: ${DBDOCS_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+server:
+  port: 8080
+google:
+  oauth2:
+    client_id: ${GOOGLE_OAUTH2_CLIENT_ID}
+    client_secret: ${GOOGLE_OAUTH2_CLIENT_SECRET}
