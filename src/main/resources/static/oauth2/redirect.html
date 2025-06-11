@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Authentication Success</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .token-box {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            word-break: break-all;
+            margin: 10px 0;
+        }
+        .copy-button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        .copy-button:hover {
+            background-color: #0056b3;
+        }
+        .success-message {
+            color: #28a745;
+            display: none;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Authentication Successful!</h2>
+        <p>Your JWT token is:</p>
+        <div class="token-box" id="token"></div>
+        <button class="copy-button" onclick="copyToken()">Copy Token</button>
+        <div class="success-message" id="copySuccess">Token copied to clipboard!</div>
+
+        <h3>Test API Call:</h3>
+        <button class="copy-button" onclick="testApi()">Test API</button>
+        <div class="token-box" id="apiResult"></div>
+    </div>
+
+    <script>
+        // Get token from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('token');
+        document.getElementById('token').textContent = token;
+
+        // Copy token function
+        function copyToken() {
+            navigator.clipboard.writeText(token).then(() => {
+                const successMsg = document.getElementById('copySuccess');
+                successMsg.style.display = 'block';
+                setTimeout(() => {
+                    successMsg.style.display = 'none';
+                }, 2000);
+            });
+        }
+
+        // Test API function
+        function testApi() {
+            fetch('/api/test/user', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('apiResult').textContent = JSON.stringify(data, null, 2);
+            })
+            .catch(error => {
+                document.getElementById('apiResult').textContent = 'Error: ' + error.message;
+            });
+        }
+    </script>
+</body>
+</html> 

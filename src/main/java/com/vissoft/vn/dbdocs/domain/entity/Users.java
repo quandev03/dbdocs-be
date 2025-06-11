@@ -1,14 +1,16 @@
-package com.vissoft.vn.dbdocs.infrastructure.persistence.entity;
+package com.vissoft.vn.dbdocs.domain.entity;
 
-import com.vissoft.vn.dbdocs.infrastructure.persistence.entity.base.BaseEntity;
+import com.vissoft.vn.dbdocs.domain.entity.base.BaseEntity;
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
+import lombok.*;
 
 @Entity
 @Table(name = "users", schema = "dbdocs")
 @Getter
 @Setter
+@Builder
+@AllArgsConstructor
+@NoArgsConstructor
 public class Users extends BaseEntity {
     
     @Id

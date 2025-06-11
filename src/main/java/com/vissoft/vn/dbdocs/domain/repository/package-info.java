@@ -1,17 +1,19 @@
 /**
- * Domain Repository Interfaces
+ * Infrastructure Persistence Repository Adapters
  * 
- * This package contains repository interfaces that define contracts
- * for data access operations in domain terms.
+ * This package contains adapter implementations that bridge
+ * between application ports and external persistence systems.
  * 
- * These are pure domain interfaces without any infrastructure concerns.
- * They define what the domain needs from persistence, not how it's implemented.
+ * These adapters implement application ports and use framework-specific
+ * technologies like Spring Data JPA to fulfill persistence contracts.
+ * 
+ * Examples: UserPersistenceAdapter implements UserPersistencePort
  * 
  * Principles:
- * - Domain-focused interface design
- * - No framework dependencies
- * - Express business needs, not technical implementation
- * - Follow Repository pattern
+ * - Implement application ports
+ * - Use framework-specific technologies
+ * - Handle data mapping and transformation
+ * - Isolate persistence concerns
  * 
  * @author VIS Software
  */

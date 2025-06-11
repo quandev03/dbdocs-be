@@ -1,6 +1,6 @@
-package com.vissoft.vn.dbdocs.infrastructure.persistence.repository;
+package com.vissoft.vn.dbdocs.domain.repository;
 
-import com.vissoft.vn.dbdocs.infrastructure.persistence.entity.Project;
+import com.vissoft.vn.dbdocs.domain.entity.Project;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 

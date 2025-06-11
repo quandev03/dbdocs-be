@@ -15,4 +15,4 @@
  * 
  * @author VIS Software
  */
-package com.vissoft.vn.dbdocs.infrastructure.persistence.entity;
+package com.vissoft.vn.dbdocs.domain.entity;

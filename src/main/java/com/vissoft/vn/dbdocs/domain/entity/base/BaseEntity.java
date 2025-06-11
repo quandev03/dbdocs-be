@@ -1,4 +1,4 @@
-package com.vissoft.vn.dbdocs.infrastructure.persistence.entity.base;
+package com.vissoft.vn.dbdocs.domain.entity.base;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.MappedSuperclass;

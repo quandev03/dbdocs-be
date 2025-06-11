@@ -1,4 +1,4 @@
-package com.vissoft.vn.dbdocs.infrastructure.persistence.entity;
+package com.vissoft.vn.dbdocs.domain.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.Column;
