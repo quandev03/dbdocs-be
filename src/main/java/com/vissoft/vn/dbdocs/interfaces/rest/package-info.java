@@ -15,4 +15,4 @@
  * 
  * @author VIS Software
  */
-package com.vissoft.vn.dbdocs.interface.rest;
+package com.vissoft.vn.dbdocs.interfaces.rest;

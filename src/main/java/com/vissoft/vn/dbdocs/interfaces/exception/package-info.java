@@ -15,4 +15,4 @@
  * 
  * @author VIS Software
  */
-package com.vissoft.vn.dbdocs.interface.exception;
+package com.vissoft.vn.dbdocs.interfaces.exception;

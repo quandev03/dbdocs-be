@@ -17,4 +17,4 @@
  * 
  * @author VIS Software
  */
-package com.vissoft.vn.dbdocs.interface.rest.dto;
+package com.vissoft.vn.dbdocs.interfaces.rest.dto;
