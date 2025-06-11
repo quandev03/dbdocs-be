@@ -8,13 +8,15 @@ spring:
           google:
             client-id: ${GOOGLE_OAUTH2_CLIENT_ID}
             client-secret: ${GOOGLE_OAUTH2_CLIENT_SECRET}
-            scope: profile, email
-            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            scope:
+              - email
+              - profile
           github:
             client-id: ${GITHUB_OAUTH2_CLIENT_ID}
             client-secret: ${GITHUB_OAUTH2_CLIENT_SECRET}
-            scope: read:user,user:email
-            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            scope:
+              - read:user
+              - user:email
         provider:
           google:
             authorization-uri: https://accounts.google.com/o/oauth2/auth
@@ -27,8 +29,13 @@ spring:
     username: ${DBDOCS_DB_USERNAME}
     password: ${DBDOCS_DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
+
+jwt:
+  expiration: 86400000  # 24 hours in milliseconds
+
 server:
   port: 8080
+
 google:
   oauth2:
     client_id: ${GOOGLE_OAUTH2_CLIENT_ID}
