@@ -29,9 +29,22 @@ spring:
     username: ${DBDOCS_DB_USERNAME}
     password: ${DBDOCS_DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
+    
+  # JPA configuration  
+  jpa:
+    properties:
+      hibernate:
+        default_schema: dbdocs
+    hibernate:
+      ddl-auto: update
+  
+  # Vô hiệu hóa Javers hoàn toàn
+  javers:
+    enabled: false
 
 jwt:
   expiration: 86400000  # 24 hours in milliseconds
+  secret: c2VjcmV0LWtleS1mb3ItZGJkb2NzLWFwcC1kZXZlbG9wbWVudC0yMDI1LTA2LTExLXZpc3NvZnQ=  # Base64 encoded secret key
 
 server:
   port: 8080
@@ -40,3 +53,17 @@ google:
   oauth2:
     client_id: ${GOOGLE_OAUTH2_CLIENT_ID}
     client_secret: ${GOOGLE_OAUTH2_CLIENT_SECRET}
+
+# SpringDoc OpenAPI/Swagger Configuration
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+    doc-expansion: none
+  default-consumes-media-type: application/json
+  default-produces-media-type: application/json
+  show-actuator: false
+  packages-to-scan: com.vissoft.vn.dbdocs.interfaces.rest
