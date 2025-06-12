@@ -1,0 +1,35 @@
+# Git
+.git
+.github
+.gitignore
+
+# Maven
+target/
+.mvn/
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+
+# Logs
+logs/
+*.log
+
+# Environment variables
+.env
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Test files
+**/test/
+**/tests/
+**/src/test/
+
+# Documentation
+docs/
+README.md 
