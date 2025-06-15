@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>DBDocs Login</title>
+    <script src="/js/auth-utils.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -102,33 +103,31 @@
         let currentToken = '';
 
         function loginWithGoogle() {
-            login('/oauth2/authorization/google');
+            AuthUtils.loginWithGoogle()
+                .then(tokenData => {
+                    currentToken = tokenData.accessToken;
+                    document.getElementById('tokenSection').style.display = 'block';
+                    document.getElementById('tokenDisplay').textContent = 
+                        JSON.stringify(tokenData, null, 2);
+                })
+                .catch(error => {
+                    console.error('Google login error:', error);
+                    alert('Login failed: ' + error.message);
+                });
         }
 
         function loginWithGithub() {
-            login('/oauth2/authorization/github');
-        }
-
-        function login(url) {
-            const width = 600;
-            const height = 600;
-            const left = window.innerWidth / 2 - width / 2;
-            const top = window.innerHeight / 2 - height / 2;
-            
-            const popup = window.open(url, 'oauth2',
-                `width=${width},height=${height},top=${top},left=${left}`);
-
-            window.addEventListener('message', function(event) {
-                if (event.origin !== window.location.origin) return;
-                
-                const response = event.data;
-                if (response && response.accessToken) {
-                    currentToken = response.accessToken;
+            AuthUtils.loginWithGithub()
+                .then(tokenData => {
+                    currentToken = tokenData.accessToken;
                     document.getElementById('tokenSection').style.display = 'block';
                     document.getElementById('tokenDisplay').textContent = 
-                        JSON.stringify(response, null, 2);
-                }
-            }, false);
+                        JSON.stringify(tokenData, null, 2);
+                })
+                .catch(error => {
+                    console.error('GitHub login error:', error);
+                    alert('Login failed: ' + error.message);
+                });
         }
 
         function copyToken() {
@@ -137,28 +136,49 @@
             });
         }
 
+        document.addEventListener('DOMContentLoaded', function() {
+            const tokenData = AuthUtils.getToken();
+            if (tokenData) {
+                currentToken = tokenData.accessToken;
+                document.getElementById('tokenSection').style.display = 'block';
+                document.getElementById('tokenDisplay').textContent = 
+                    JSON.stringify(tokenData, null, 2);
+            }
+            
+            window.addEventListener('message', function(event) {
+                console.log('Received message:', event);
+                const data = event.data;
+                if (data && data.accessToken) {
+                    console.log('Received token data:', data);
+                    localStorage.setItem('token', data.accessToken);
+                    localStorage.setItem('tokenType', data.tokenType || 'Bearer');
+                    localStorage.setItem('expiresIn', data.expiresIn);
+                    
+                    currentToken = data.accessToken;
+                    document.getElementById('tokenSection').style.display = 'block';
+                    document.getElementById('tokenDisplay').textContent = 
+                        JSON.stringify(data, null, 2);
+                }
+            });
+        });
+
         function testApi() {
             if (!currentToken) {
                 alert('Please login first!');
                 return;
             }
 
-            fetch('/api/test/user', {
-                headers: {
-                    'Authorization': `Bearer ${currentToken}`
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                document.getElementById('apiResponse').style.display = 'block';
-                document.getElementById('apiResponseDisplay').textContent = 
-                    JSON.stringify(data, null, 2);
-            })
-            .catch(error => {
-                document.getElementById('apiResponse').style.display = 'block';
-                document.getElementById('apiResponseDisplay').textContent = 
-                    'Error: ' + error.message;
-            });
+            AuthUtils.callApi('/api/test/user')
+                .then(data => {
+                    document.getElementById('apiResponse').style.display = 'block';
+                    document.getElementById('apiResponseDisplay').textContent = 
+                        JSON.stringify(data, null, 2);
+                })
+                .catch(error => {
+                    document.getElementById('apiResponse').style.display = 'block';
+                    document.getElementById('apiResponseDisplay').textContent = 
+                        'Error: ' + error.message;
+                });
         }
     </script>
 </body>

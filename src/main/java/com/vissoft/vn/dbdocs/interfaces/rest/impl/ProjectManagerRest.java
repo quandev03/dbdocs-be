@@ -2,11 +2,13 @@ package com.vissoft.vn.dbdocs.interfaces.rest.impl;
 
 import com.vissoft.vn.dbdocs.application.dto.ProjectCreateRequest;
 import com.vissoft.vn.dbdocs.application.dto.ProjectDTO;
+import com.vissoft.vn.dbdocs.application.dto.ProjectResponse;
 import com.vissoft.vn.dbdocs.application.dto.ProjectUpdateRequest;
 import com.vissoft.vn.dbdocs.domain.service.ProjectManagerService;
 import com.vissoft.vn.dbdocs.infrastructure.security.SecurityUtils;
 import com.vissoft.vn.dbdocs.interfaces.rest.ProjectManagerOperator;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,6 +16,7 @@ import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
+@Slf4j
 public class ProjectManagerRest implements ProjectManagerOperator {
 
     private final ProjectManagerService projectManagerService;
@@ -35,7 +38,14 @@ public class ProjectManagerRest implements ProjectManagerOperator {
 
     @Override
     public ResponseEntity<List<ProjectDTO>> getAllProjects() {
+        log.info("REST request to get all projects for user: {}", SecurityUtils.getCurrentUserId());
         return ResponseEntity.ok(projectManagerService.getAllProjects());
+    }
+
+    @Override
+    public ResponseEntity<List<ProjectResponse>> getSharedProjects() {
+        log.info("REST request to get shared projects for user: {}", SecurityUtils.getCurrentUserId());
+        return ResponseEntity.ok(projectManagerService.getSharedProjects());
     }
 
     @Override

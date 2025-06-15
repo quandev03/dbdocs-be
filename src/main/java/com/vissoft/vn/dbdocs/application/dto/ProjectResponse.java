@@ -11,6 +11,8 @@ public class ProjectResponse {
     private String passwordShare;
     private Integer visibility;
     private String ownerId;
+    private String ownerEmail;
+    private String ownerAvatarUrl;
     private Date createdDate;
     private String createdBy;
     private Date modifiedDate;

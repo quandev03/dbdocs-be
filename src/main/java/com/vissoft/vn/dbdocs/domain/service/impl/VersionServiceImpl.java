@@ -1,8 +1,20 @@
 package com.vissoft.vn.dbdocs.domain.service.impl;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vissoft.vn.dbdocs.application.dto.ChangeLogDTO;
+import com.vissoft.vn.dbdocs.application.dto.ChangeLogDdlRequest;
 import com.vissoft.vn.dbdocs.application.dto.DdlScriptRequest;
 import com.vissoft.vn.dbdocs.application.dto.DdlScriptResponse;
 import com.vissoft.vn.dbdocs.application.dto.SingleVersionDdlRequest;
@@ -16,6 +28,7 @@ import com.vissoft.vn.dbdocs.domain.repository.ChangeLogRepository;
 import com.vissoft.vn.dbdocs.domain.repository.ProjectRepository;
 import com.vissoft.vn.dbdocs.domain.repository.VersionRepository;
 import com.vissoft.vn.dbdocs.domain.service.ChangeLogService;
+import com.vissoft.vn.dbdocs.domain.service.ProjectAccessService;
 import com.vissoft.vn.dbdocs.domain.service.VersionComparisonService;
 import com.vissoft.vn.dbdocs.domain.service.VersionService;
 import com.vissoft.vn.dbdocs.infrastructure.constant.Constants;
@@ -25,20 +38,11 @@ import com.vissoft.vn.dbdocs.infrastructure.mapper.ChangeLogMapper;
 import com.vissoft.vn.dbdocs.infrastructure.mapper.DdlScriptResponseMapper;
 import com.vissoft.vn.dbdocs.infrastructure.mapper.VersionMapper;
 import com.vissoft.vn.dbdocs.infrastructure.security.SecurityUtils;
+
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.stream.Collectors;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.HashMap;
 
 @Slf4j
 @Service
@@ -55,6 +59,7 @@ public class VersionServiceImpl implements VersionService {
     private final VersionComparisonService versionComparisonService;
     private final ObjectMapper objectMapper;
     private final DdlScriptResponseMapper ddlScriptResponseMapper;
+    private final ProjectAccessService projectAccessService;
 
     @Override
     @Transactional
@@ -266,7 +271,15 @@ public class VersionServiceImpl implements VersionService {
                 throw BaseException.of(ErrorCode.PROJECT_NOT_FOUND);
             }
             
-            // TODO: Kiểm tra quyền truy cập project
+            // Kiểm tra quyền truy cập project
+            String currentUserId = securityUtils.getCurrentUserId();
+            Integer permission = projectAccessService.checkUserAccess(projectId, currentUserId);
+            
+            if (permission == null) {
+                log.error("User {} does not have permission to access project {}", currentUserId, projectId);
+                throw BaseException.of(ErrorCode.PROJECT_ACCESS_DENIED, HttpStatus.FORBIDDEN);
+            }
+            
             log.debug("Retrieving versions from database");
             List<Version> versions = versionRepository.findByProjectIdOrderByCodeVersionDesc(projectId);
             log.info("Found {} versions for project: {}", versions.size(), projectId);
@@ -1486,5 +1499,93 @@ public class VersionServiceImpl implements VersionService {
         
         // Default to NVARCHAR if type is unknown
         return "NVARCHAR(255)";
+    }
+
+    @Override
+    public DdlScriptResponse generateChangeLogDdl(ChangeLogDdlRequest request) {
+        log.info("Generating DDL script for changelog - ProjectID: {}, ChangeLogCode: {}, Dialect: {}", 
+                request.getProjectId(), request.getChangeLogCode(), request.getDialect());
+        
+        try {
+            // Kiểm tra project tồn tại
+            if (!projectRepository.existsById(request.getProjectId())) {
+                log.error("Project not found with ID: {}", request.getProjectId());
+                throw BaseException.of(ErrorCode.PROJECT_NOT_FOUND);
+            }
+            
+            // Kiểm tra quyền truy cập của người dùng vào dự án
+            String currentUserId = securityUtils.getCurrentUserId();
+            Integer permission = projectAccessService.checkUserAccess(request.getProjectId(), currentUserId);
+            
+            if (permission == null) {
+                log.error("User {} does not have permission to access project {}", currentUserId, request.getProjectId());
+                throw BaseException.of(ErrorCode.PROJECT_ACCESS_DENIED, HttpStatus.FORBIDDEN);
+            }
+            
+            // Tìm changelog theo mã code
+            ChangeLog changeLog = changeLogRepository.findByProjectIdAndCodeChangeLog(request.getProjectId(), request.getChangeLogCode())
+                    .orElseThrow(() -> {
+                        log.error("Changelog not found with Project ID: {} and Code: {}", 
+                                request.getProjectId(), request.getChangeLogCode());
+                        return BaseException.of(ErrorCode.CHANGELOG_NOT_FOUND);
+                    });
+            
+            // Lấy nội dung DBML từ changelog
+            String dbmlContent = changeLog.getContent();
+            if (dbmlContent == null || dbmlContent.trim().isEmpty()) {
+                log.error("DBML content is empty for changelog: {}", changeLog.getId());
+                throw BaseException.of(ErrorCode.INVALID_CHANGELOG_DATA, HttpStatus.BAD_REQUEST);
+            }
+            
+            log.debug("Found DBML content with length: {} bytes", dbmlContent.length());
+            
+            // Tạo DDL script từ DBML
+            StringBuilder ddlScript = new StringBuilder();
+            
+            // Xác định tên dialect
+            String dialectName = getDialectName(request.getDialect());
+            
+            // Thêm header comment
+            ddlScript.append(Constants.SQL.Formatting.COMMENT_PREFIX).append("DDL Script for project: ").append(request.getProjectId())
+                    .append(Constants.SQL.Formatting.NEW_LINE).append(Constants.SQL.Formatting.COMMENT_PREFIX).append("Changelog Code: ").append(request.getChangeLogCode())
+                    .append(Constants.SQL.Formatting.NEW_LINE).append(Constants.SQL.Formatting.COMMENT_PREFIX).append("Dialect: ").append(dialectName)
+                    .append(Constants.SQL.Formatting.NEW_LINE).append(Constants.SQL.Formatting.NEW_LINE);
+            
+            // Parse DBML content và tạo DDL
+            switch (request.getDialect()) {
+                case Constants.SQL.Dialect.MYSQL:
+                case Constants.SQL.Dialect.MARIADB:
+                    generateMySqlDdlFromDbml(dbmlContent, ddlScript);
+                    break;
+                case Constants.SQL.Dialect.POSTGRESQL:
+                    generatePostgreSqlDdlFromDbml(dbmlContent, ddlScript);
+                    break;
+                case Constants.SQL.Dialect.ORACLE:
+                    generateOracleDdlFromDbml(dbmlContent, ddlScript);
+                    break;
+                case Constants.SQL.Dialect.SQL_SERVER:
+                    generateSqlServerDdlFromDbml(dbmlContent, ddlScript);
+                    break;
+                default:
+                    // Mặc định sử dụng MySQL
+                    generateMySqlDdlFromDbml(dbmlContent, ddlScript);
+                    break;
+            }
+            
+            log.info("DDL script generated successfully with length: {} characters", ddlScript.length());
+            
+            // Tạo response
+            return DdlScriptResponse.builder()
+                    .projectId(request.getProjectId())
+                    .dialect(request.getDialect())
+                    .ddlScript(ddlScript.toString())
+                    .build();
+        } catch (BaseException e) {
+            log.error("Base exception occurred during changelog DDL script generation: {}", e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            log.error("Error generating changelog DDL script: {}", e.getMessage(), e);
+            throw BaseException.of(ErrorCode.INTERNAL_SERVER_ERROR, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
     }
 } 

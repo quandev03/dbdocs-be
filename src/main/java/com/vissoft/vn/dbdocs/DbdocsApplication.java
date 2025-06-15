@@ -1,6 +1,7 @@
 package com.vissoft.vn.dbdocs;
 
-import lombok.extern.slf4j.Slf4j;
+import java.net.InetAddress;
+
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -8,7 +9,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.core.env.Environment;
 
-import java.net.InetAddress;
+import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @SpringBootApplication
@@ -48,17 +49,17 @@ public class DbdocsApplication {
                 apiContextPath = apiContextPath.substring(0, apiContextPath.length() - 1);
             }
             
-            log.info("\n----------------------------------------------------------\n\t" +
-                    "Application is running! Access URLs:\n\t" +
-                    "Local: \t\t{}://localhost:{}{}\n\t" +
-                    "External: \t{}://{}:{}{}\n\t" +
-                    "Swagger UI: \t{}://{}:{}{}/swagger-ui.html\n\t" +
-                    "OpenAPI: \t{}://{}:{}{}/v3/api-docs\n\t" +
+            log.info("\n----------------------------------------------------------\n" +
+                    "Application is running! Access URLs:\n" +
+                    "\tLocal: \t\thttp://localhost:{}{}\n" +
+                    "\tExternal: \thttp://{}:{}{}\n" +
+                    "\tSwagger UI: \thttp://{}:{}{}/swagger-ui.html\n" +
+                    "\tOpenAPI: \thttp://{}:{}{}/v3/api-docs\n" +
                     "----------------------------------------------------------",
-                    protocol, serverPort, contextPath,
-                    protocol, hostAddress, serverPort, contextPath,
-                    protocol, hostAddress, serverPort, apiContextPath,
-                    protocol, hostAddress, serverPort, apiContextPath);
+                    serverPort, contextPath,
+                    hostAddress, serverPort, contextPath,
+                    hostAddress, serverPort, apiContextPath,
+                    hostAddress, serverPort, apiContextPath);
         };
     }
 }

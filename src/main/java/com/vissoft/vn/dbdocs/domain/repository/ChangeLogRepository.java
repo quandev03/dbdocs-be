@@ -1,14 +1,15 @@
 package com.vissoft.vn.dbdocs.domain.repository;
 
-import com.vissoft.vn.dbdocs.domain.entity.ChangeLog;
+import java.util.List;
+import java.util.Optional;
+
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import java.util.List;
-import java.util.Optional;
+import com.vissoft.vn.dbdocs.domain.entity.ChangeLog;
 
 @Repository
 public interface ChangeLogRepository extends JpaRepository<ChangeLog, String> {
@@ -29,4 +30,6 @@ public interface ChangeLogRepository extends JpaRepository<ChangeLog, String> {
         List<ChangeLog> changeLogs = findTopByProjectIdOrderByCreatedDateDesc(projectId, org.springframework.data.domain.PageRequest.of(0, 1));
         return changeLogs.isEmpty() ? Optional.empty() : Optional.of(changeLogs.get(0));
     }
+    
+    Optional<ChangeLog> findByProjectIdAndCodeChangeLog(String projectId, String codeChangeLog);
 } 

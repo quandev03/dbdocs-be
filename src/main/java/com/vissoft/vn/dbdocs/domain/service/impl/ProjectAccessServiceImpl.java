@@ -1,5 +1,13 @@
 package com.vissoft.vn.dbdocs.domain.service.impl;
 
+import java.util.ArrayList;
+import java.util.List;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.vissoft.vn.dbdocs.application.dto.ProjectAccessDTO;
 import com.vissoft.vn.dbdocs.application.dto.ProjectAccessRequest;
 import com.vissoft.vn.dbdocs.application.dto.ProjectPermissionRequest;
@@ -15,18 +23,9 @@ import com.vissoft.vn.dbdocs.infrastructure.exception.BaseException;
 import com.vissoft.vn.dbdocs.infrastructure.exception.ErrorCode;
 import com.vissoft.vn.dbdocs.infrastructure.mapper.ProjectAccessMapper;
 import com.vissoft.vn.dbdocs.infrastructure.security.SecurityUtils;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -67,19 +66,19 @@ public class ProjectAccessServiceImpl implements ProjectAccessService {
                         return BaseException.of(ErrorCode.USER_NOT_FOUND);
                     });
             
-            log.info("Found user: {} with socialId: {}", user.getEmail(), user.getSocialId());
+            log.info("Found user: {} with socialId: {}", user.getEmail(), user.getUserId());
             
             // Kiểm tra người dùng đã được thêm vào dự án chưa
-            if (projectAccessRepository.findByProjectIdAndIdentifier(request.getProjectId(), user.getSocialId()).isPresent()) {
+            if (projectAccessRepository.findByProjectIdAndIdentifier(request.getProjectId(), user.getUserId()).isPresent()) {
                 log.error("User already has access - socialId: {}, projectId: {}", 
-                        user.getSocialId(), request.getProjectId());
+                        user.getUserId(), request.getProjectId());
                 throw BaseException.of(ErrorCode.USER_ALREADY_HAS_ACCESS);
             }
             
             // Thêm người dùng vào dự án
             ProjectAccess projectAccess = new ProjectAccess();
             projectAccess.setProjectId(request.getProjectId());
-            projectAccess.setIdentifier(user.getSocialId());
+            projectAccess.setIdentifier(user.getUserId());
             projectAccess.setPermission(request.getPermission());
             projectAccess.setOwnerId(project.getOwnerId());
             
@@ -315,15 +314,32 @@ public class ProjectAccessServiceImpl implements ProjectAccessService {
             log.info("Found {} users with access to project: {}", accessList.size(), projectId);
             
             for (ProjectAccess access : accessList) {
+                // Trước tiên thử tìm theo socialId
                 Users user = userRepository.findBySocialId(access.getIdentifier()).orElse(null);
+                
+                // Nếu không tìm thấy, thử tìm theo userId
+                if (user == null) {
+                    log.info("User not found by socialId: {}, trying to find by userId", access.getIdentifier());
+                    user = userRepository.findById(access.getIdentifier()).orElse(null);
+                }
+                
                 if (user != null) {
-                    log.debug("Found user: {} with permission: {} for project: {}", 
-                            user.getEmail(), access.getPermission(), projectId);
+                    log.info("Found user for access - identifier: {}, email: {}, fullName: {}, avatarUrl: {}", 
+                            access.getIdentifier(), user.getEmail(), user.getFullName(), user.getAvatarUrl());
                 } else {
                     log.warn("User not found for identifier: {} in project: {}", 
                             access.getIdentifier(), projectId);
                 }
+                
                 result.add(projectAccessMapper.toDTOWithUser(access, user));
+            }
+            
+            // Kiểm tra kết quả cuối cùng
+            log.info("Returning {} project access DTOs", result.size());
+            for (int i = 0; i < Math.min(result.size(), 5); i++) { // Log tối đa 5 kết quả đầu tiên
+                ProjectAccessDTO dto = result.get(i);
+                log.info("Access DTO {} - id: {}, identifier: {}, userEmail: {}, userName: {}, avatarUrl: {}", 
+                        i, dto.getId(), dto.getIdentifier(), dto.getUserEmail(), dto.getUserName(), dto.getAvatarUrl());
             }
             
             return result;
@@ -364,6 +380,58 @@ public class ProjectAccessServiceImpl implements ProjectAccessService {
             throw e;
         } catch (Exception e) {
             log.error("Unexpected error adding owner to project", e);
+            throw BaseException.of(ErrorCode.INTERNAL_SERVER_ERROR, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Override
+    public Integer checkUserPermissionLevel(String projectId, String userId) {
+        log.info("Checking user permission level - projectId: {}, userId: {}", projectId, userId);
+        
+        try {
+            // Kiểm tra dự án tồn tại
+            Project project = projectRepository.findById(projectId)
+                    .orElseThrow(() -> {
+                        log.error("Project not found - projectId: {}", projectId);
+                        return BaseException.of(ErrorCode.PROJECT_NOT_FOUND);
+                    });
+            
+            // Kiểm tra người dùng
+            Users user = userRepository.findById(userId)
+                    .orElseThrow(() -> {
+                        log.error("User not found - userId: {}", userId);
+                        return BaseException.of(ErrorCode.USER_NOT_FOUND);
+                    });
+            
+            // Nếu là chủ sở hữu, có quyền owner (1)
+            if (project.getOwnerId().equals(userId)) {
+                log.info("User is project owner - permission level: 1 (Owner)");
+                return 1; // Owner permission
+            }
+            
+            // Kiểm tra quyền trong bảng access
+            Integer permission = projectAccessRepository.findByProjectIdAndIdentifier(projectId, user.getSocialId())
+                    .map(ProjectAccess::getPermission)
+                    .orElse(null);
+            
+            // Nếu có quyền trong bảng access
+            if (permission != null) {
+                // Chuyển đổi permission từ cũ sang mới
+                // Cũ: 1 = View, 2 = Edit
+                // Mới: 2 = View, 3 = Edit
+                int permissionLevel = permission == 1 ? 2 : 3; // 1->2 (View), 2->3 (Edit)
+                log.info("User has explicit permission level: {} for project: {}", 
+                        permissionLevel == 2 ? "View" : "Edit", projectId);
+                return permissionLevel;
+            }
+            
+            // Không có quyền truy cập
+            log.info("User has no access to project: {} - permission level: 4 (Denied)", projectId);
+            return 4; // Denied
+        } catch (BaseException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Unexpected error checking user permission level", e);
             throw BaseException.of(ErrorCode.INTERNAL_SERVER_ERROR, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }

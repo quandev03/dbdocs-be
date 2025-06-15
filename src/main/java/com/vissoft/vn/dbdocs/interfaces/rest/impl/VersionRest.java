@@ -1,5 +1,6 @@
 package com.vissoft.vn.dbdocs.interfaces.rest.impl;
 
+import com.vissoft.vn.dbdocs.application.dto.ChangeLogDdlRequest;
 import com.vissoft.vn.dbdocs.application.dto.DdlScriptRequest;
 import com.vissoft.vn.dbdocs.application.dto.DdlScriptResponse;
 import com.vissoft.vn.dbdocs.application.dto.SingleVersionDdlRequest;
@@ -62,5 +63,14 @@ public class VersionRest implements VersionOperator {
         log.info("REST request to generate DDL script for single version - Project: {}, Version: {}, Dialect: {}", 
                 request.getProjectId(), request.getVersionNumber(), request.getDialect());
         return ResponseEntity.ok(versionService.generateSingleVersionDdl(request));
+    }
+
+    @Override
+    public ResponseEntity<DdlScriptResponse> generateChangeLogDdl(ChangeLogDdlRequest request) {
+        log.info("REST request to generate DDL script from changelog - ProjectID: {}, ChangeLogCode: {}, Dialect: {}", 
+                request.getProjectId(), request.getChangeLogCode(), request.getDialect());
+        
+        DdlScriptResponse response = versionService.generateChangeLogDdl(request);
+        return ResponseEntity.ok(response);
     }
 } 

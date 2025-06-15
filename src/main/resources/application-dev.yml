@@ -1,37 +1,73 @@
 spring:
+  application:
+    name: dbdocs
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_OAUTH2_CLIENT_ID}
+            client-secret: ${GOOGLE_OAUTH2_CLIENT_SECRET}
+            scope:
+              - email
+              - profile
+          github:
+            client-id: ${GITHUB_OAUTH2_CLIENT_ID}
+            client-secret: ${GITHUB_OAUTH2_CLIENT_SECRET}
+            scope:
+              - read:user
+              - user:email
+        provider:
+          google:
+            authorization-uri: https://accounts.google.com/o/oauth2/auth
+            token-uri: https://oauth2.googleapis.com/token
+            user-info-uri: https://www.googleapis.com/oauth2/v3/userinfo
+            user-name-attribute: sub
+
   datasource:
-    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1
-    username: sa
-    password: 
-    driver-class-name: org.h2.Driver
+    url: ${DBDOCS_DB_URL:jdbc:postgresql://localhost:5432/dbdocs}
+    username: ${DBDOCS_DB_USERNAME:postgres}
+    password: ${DBDOCS_DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
     
   # JPA configuration  
   jpa:
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.H2Dialect
-        format_sql: true
+        default_schema: dbdocs
     hibernate:
       ddl-auto: update
-    database-platform: org.hibernate.dialect.H2Dialect
-    show-sql: true
-    
-  # Enable H2 console
-  h2:
-    console:
-      enabled: true
-      path: /h2-console
-
-  # Disable Javers completely
+  
+  # Vô hiệu hóa Javers hoàn toàn
   javers:
     enabled: false
-    
-# SpringDoc configuration
+
+jwt:
+  expiration: 86400000  # 24 hours in milliseconds
+  secret: c2VjcmV0LWtleS1mb3ItZGJkb2NzLWFwcC1kZXZlbG9wbWVudC0yMDI1LTA2LTExLXZpc3NvZnQ=  # Base64 encoded secret key
+
+server:
+  port: 8080
+
+# CORS Configuration
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200,http://localhost:3000}
+
+google:
+  oauth2:
+    client_id: ${GOOGLE_OAUTH2_CLIENT_ID}
+    client_secret: ${GOOGLE_OAUTH2_CLIENT_SECRET}
+
+# SpringDoc OpenAPI/Swagger Configuration
 springdoc:
-  swagger-ui:
-    path: /swagger-ui.html
   api-docs:
     path: /v3/api-docs
-    
-server:
-  port: 8081 
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+    doc-expansion: none
+  default-consumes-media-type: application/json
+  default-produces-media-type: application/json
+  show-actuator: false
+  packages-to-scan: com.vissoft.vn.dbdocs.interfaces.rest 

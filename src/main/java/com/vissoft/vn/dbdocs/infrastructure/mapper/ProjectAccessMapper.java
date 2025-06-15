@@ -6,6 +6,8 @@ import com.vissoft.vn.dbdocs.domain.entity.Users;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.Named;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Mapper(componentModel = "spring")
 public interface ProjectAccessMapper {
@@ -20,12 +22,24 @@ public interface ProjectAccessMapper {
     
     @Named("toDTOWithUser")
     default ProjectAccessDTO toDTOWithUser(ProjectAccess projectAccess, Users user) {
+        Logger log = LoggerFactory.getLogger(ProjectAccessMapper.class);
         ProjectAccessDTO dto = toDTO(projectAccess);
+        
         if (user != null) {
+            log.info("Setting user info for projectAccess: {} - email: {}, fullName: {}, avatarUrl: {}", 
+                    projectAccess.getProjectAccessId(), user.getEmail(), user.getFullName(), user.getAvatarUrl());
             dto.setUserEmail(user.getEmail());
             dto.setUserName(user.getFullName());
             dto.setAvatarUrl(user.getAvatarUrl());
+        } else {
+            log.warn("User is null for projectAccess: {}, identifier: {}", 
+                    projectAccess.getProjectAccessId(), projectAccess.getIdentifier());
         }
+        
+        // Log the final DTO to verify the values
+        log.info("Final ProjectAccessDTO - id: {}, userEmail: {}, userName: {}, avatarUrl: {}", 
+                dto.getId(), dto.getUserEmail(), dto.getUserName(), dto.getAvatarUrl());
+        
         return dto;
     }
     

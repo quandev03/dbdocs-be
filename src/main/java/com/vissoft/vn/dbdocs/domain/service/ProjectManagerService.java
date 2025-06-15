@@ -13,4 +13,10 @@ public interface ProjectManagerService {
     ProjectDTO getProjectById(String projectId);
     List<ProjectDTO> getAllProjects();
     void deleteProject(String projectId);
+    
+    /**
+     * Lấy danh sách các project được chia sẻ với user hiện tại
+     * @return Danh sách các project được chia sẻ kèm theo thông tin owner
+     */
+    List<ProjectResponse> getSharedProjects();
 }

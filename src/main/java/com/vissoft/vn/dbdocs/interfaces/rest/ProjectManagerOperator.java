@@ -27,6 +27,9 @@ public interface ProjectManagerOperator {
     @GetMapping
     ResponseEntity<List<ProjectDTO>> getAllProjects();
 
+    @GetMapping("/shared")
+    ResponseEntity<List<ProjectResponse>> getSharedProjects();
+
     @DeleteMapping("/{projectId}")
     ResponseEntity<Void> deleteProject(@PathVariable String projectId);
 }

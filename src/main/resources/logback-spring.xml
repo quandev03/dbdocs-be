@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/base.xml" />
+    
+    <!-- Bật debug cho các class liên quan đến CORS -->
+    <logger name="org.springframework.web.cors" level="DEBUG" />
+    <logger name="org.springframework.web.filter.CorsFilter" level="DEBUG" />
+    <logger name="com.vissoft.vn.dbdocs.infrastructure.config.CorsConfig" level="DEBUG" />
+    <logger name="com.vissoft.vn.dbdocs.infrastructure.config.SecurityConfig" level="DEBUG" />
+    <logger name="com.vissoft.vn.dbdocs.infrastructure.config.WebMvcConfig" level="DEBUG" />
+    <logger name="com.vissoft.vn.dbdocs.infrastructure.filter.RequestResponseLoggingFilter" level="DEBUG" />
+    <logger name="com.vissoft.vn.dbdocs.interfaces.rest.CorsTestController" level="DEBUG" />
+    
+    <!-- Bật debug cho Spring Security -->
+    <logger name="org.springframework.security" level="DEBUG" />
+    
+    <!-- Root logger level -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE" />
+    </root>
+</configuration> 

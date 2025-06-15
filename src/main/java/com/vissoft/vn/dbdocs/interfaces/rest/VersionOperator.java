@@ -1,13 +1,15 @@
 package com.vissoft.vn.dbdocs.interfaces.rest;
 
-import com.vissoft.vn.dbdocs.application.dto.DdlScriptRequest;
-import com.vissoft.vn.dbdocs.application.dto.DdlScriptResponse;
-import com.vissoft.vn.dbdocs.application.dto.SingleVersionDdlRequest;
-import com.vissoft.vn.dbdocs.application.dto.VersionComparisonDTO;
-import com.vissoft.vn.dbdocs.application.dto.VersionCreateRequest;
-import com.vissoft.vn.dbdocs.application.dto.VersionDTO;
+import java.util.List;
+
+import com.vissoft.vn.dbdocs.application.dto.*;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 
@@ -34,4 +36,7 @@ public interface VersionOperator {
     
     @PostMapping("/generate-single-ddl")
     ResponseEntity<DdlScriptResponse> generateSingleVersionDdl(@RequestBody SingleVersionDdlRequest request);
+    
+    @PostMapping("/generate-changelog-ddl")
+    ResponseEntity<DdlScriptResponse> generateChangeLogDdl(@RequestBody ChangeLogDdlRequest request);
 } 

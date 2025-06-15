@@ -1,10 +1,7 @@
 package com.vissoft.vn.dbdocs.domain.entity;
 
 import com.vissoft.vn.dbdocs.domain.entity.base.BaseEntity;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -19,6 +16,7 @@ import lombok.Setter;
 public class ProjectAccess extends BaseEntity {
     
     @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "project_access_id")
     private String projectAccessId;
     

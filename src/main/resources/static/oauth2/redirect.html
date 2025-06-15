@@ -8,86 +8,115 @@
             font-family: Arial, sans-serif;
             margin: 20px;
             background-color: #f5f5f5;
+            text-align: center;
+            padding-top: 50px;
         }
         .container {
-            max-width: 800px;
+            max-width: 500px;
             margin: 0 auto;
             background: white;
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
-        .token-box {
-            background-color: #f8f9fa;
-            padding: 15px;
-            border-radius: 4px;
-            word-break: break-all;
-            margin: 10px 0;
+        .success-icon {
+            color: #4CAF50;
+            font-size: 48px;
+            margin-bottom: 20px;
         }
-        .copy-button {
-            background-color: #007bff;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-top: 10px;
-        }
-        .copy-button:hover {
-            background-color: #0056b3;
-        }
-        .success-message {
-            color: #28a745;
-            display: none;
-            margin-top: 10px;
+        .message {
+            margin: 20px 0;
         }
     </style>
 </head>
 <body>
     <div class="container">
+        <div class="success-icon">✓</div>
         <h2>Authentication Successful!</h2>
-        <p>Your JWT token is:</p>
-        <div class="token-box" id="token"></div>
-        <button class="copy-button" onclick="copyToken()">Copy Token</button>
-        <div class="success-message" id="copySuccess">Token copied to clipboard!</div>
-
-        <h3>Test API Call:</h3>
-        <button class="copy-button" onclick="testApi()">Test API</button>
-        <div class="token-box" id="apiResult"></div>
+        <div class="message">This window will close automatically...</div>
+        <div id="error-message" style="color: red; display: none;"></div>
     </div>
 
     <script>
-        // Get token from URL
-        const urlParams = new URLSearchParams(window.location.search);
-        const token = urlParams.get('token');
-        document.getElementById('token').textContent = token;
-
-        // Copy token function
-        function copyToken() {
-            navigator.clipboard.writeText(token).then(() => {
-                const successMsg = document.getElementById('copySuccess');
-                successMsg.style.display = 'block';
-                setTimeout(() => {
-                    successMsg.style.display = 'none';
-                }, 2000);
-            });
-        }
-
-        // Test API function
-        function testApi() {
-            fetch('/api/test/user', {
-                headers: {
-                    'Authorization': `Bearer ${token}`
+        document.addEventListener('DOMContentLoaded', function() {
+            try {
+                // Lấy target origin từ query parameter hoặc referer
+                let targetOrigin = '*'; // Cho phép tất cả origins - chỉ dùng cho dev
+                
+                // Cách tốt hơn là lấy origin từ URL parameters nếu có
+                const urlParams = new URLSearchParams(window.location.search);
+                const redirectUri = urlParams.get('redirect_uri');
+                if (redirectUri) {
+                    try {
+                        const url = new URL(redirectUri);
+                        targetOrigin = url.origin;
+                    } catch (e) {
+                        console.error('Invalid redirect_uri:', e);
+                    }
                 }
-            })
-            .then(response => response.json())
-            .then(data => {
-                document.getElementById('apiResult').textContent = JSON.stringify(data, null, 2);
-            })
-            .catch(error => {
-                document.getElementById('apiResult').textContent = 'Error: ' + error.message;
-            });
-        }
+                
+                // Cố gắng parse token từ JSON response
+                const tokenDataElement = document.body.textContent;
+                let tokenData;
+                
+                try {
+                    // Tìm kiếm chuỗi JSON trong nội dung trang
+                    const jsonMatch = tokenDataElement.match(/\{[\s\S]*\}/);
+                    if (jsonMatch) {
+                        tokenData = JSON.parse(jsonMatch[0]);
+                    } else {
+                        throw new Error("No JSON data found");
+                    }
+                } catch (jsonError) {
+                    console.log("Could not parse JSON directly, trying to extract token from page");
+                    
+                    // Phương án dự phòng: tìm token trong nội dung trang
+                    const accessTokenMatch = tokenDataElement.match(/"accessToken"\s*:\s*"([^"]+)"/);
+                    const tokenTypeMatch = tokenDataElement.match(/"tokenType"\s*:\s*"([^"]+)"/);
+                    const expiresInMatch = tokenDataElement.match(/"expiresIn"\s*:\s*(\d+)/);
+                    
+                    if (accessTokenMatch) {
+                        tokenData = {
+                            accessToken: accessTokenMatch[1],
+                            tokenType: tokenTypeMatch ? tokenTypeMatch[1] : "Bearer",
+                            expiresIn: expiresInMatch ? parseInt(expiresInMatch[1]) : 86400000
+                        };
+                    } else {
+                        throw new Error("Could not extract token data");
+                    }
+                }
+                
+                if (tokenData && tokenData.accessToken) {
+                    // Gửi token về cửa sổ cha qua postMessage
+                    if (window.opener) {
+                        window.opener.postMessage(tokenData, targetOrigin);
+                        
+                        // Đóng cửa sổ sau 1.5 giây
+                        setTimeout(() => window.close(), 1500);
+                    } else {
+                        // Nếu không có cửa sổ cha, lưu trực tiếp vào localStorage
+                        localStorage.setItem('token', tokenData.accessToken);
+                        localStorage.setItem('tokenType', tokenData.tokenType || 'Bearer');
+                        localStorage.setItem('expiresIn', tokenData.expiresIn || 86400000);
+                        
+                        // Redirect về trang chính
+                        setTimeout(() => {
+                            window.location.href = '/';
+                        }, 1500);
+                    }
+                    
+                    document.querySelector('.message').textContent = 
+                        'Authentication successful! Redirecting...';
+                } else {
+                    throw new Error("Invalid token data");
+                }
+            } catch (e) {
+                console.error('Error processing authentication:', e);
+                document.getElementById('error-message').textContent = 
+                    'Error: ' + e.message + '. Please try again or contact support.';
+                document.getElementById('error-message').style.display = 'block';
+            }
+        });
     </script>
 </body>
 </html> 
