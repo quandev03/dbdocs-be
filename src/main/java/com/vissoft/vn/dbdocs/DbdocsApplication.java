@@ -13,7 +13,6 @@ import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @SpringBootApplication
-@ComponentScan(basePackages = {"com.vissoft.vn.dbdocs"})
 public class DbdocsApplication {
 
     public static void main(String[] args) {

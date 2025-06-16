@@ -36,7 +36,8 @@ public class SecurityConfig {
         // Cho phép OPTIONS request để CORS preflight có thể hoạt động
         http
             .csrf(AbstractHttpConfigurer::disable)
-            .cors(cors -> cors.configurationSource(corsConfigurationSource))
+            // Tắt cấu hình CORS mặc định, để sử dụng SimpleCorsFilter thay thế
+            .cors(AbstractHttpConfigurer::disable)
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
@@ -50,6 +51,8 @@ public class SecurityConfig {
                                "/oauth2/redirect.html", "/oauth2/authorization/**").permitAll()
                 // Swagger UI endpoints
                 .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                // Cho phép truy cập không xác thực vào endpoint lấy thông tin người dùng
+                .requestMatchers("/api/v1/users/**").permitAll()
                 // API endpoints require authentication
                 .requestMatchers("/api/**").authenticated()
                 // All other requests need to be authenticated
@@ -57,9 +60,8 @@ public class SecurityConfig {
             .oauth2Login(oauth2 -> oauth2
                 .successHandler(oAuth2LoginSuccessHandler))
             // Add filters in correct order
-            .addFilterBefore(corsFilter, UsernamePasswordAuthenticationFilter.class)
-            .addFilterAfter(jwtAuthenticationFilter, CorsFilter.class);
-
+            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+        
         return http.build();
     }
 }

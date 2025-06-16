@@ -1,7 +1,8 @@
 package com.vissoft.vn.dbdocs.interfaces.rest.impl;
 
-import com.vissoft.vn.dbdocs.interfaces.rest.AuthOperator;
 import org.springframework.web.bind.annotation.RestController;
+
+import com.vissoft.vn.dbdocs.interfaces.rest.AuthOperator;
 
 @RestController
 public class AuthRest implements AuthOperator {

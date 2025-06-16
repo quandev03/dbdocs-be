@@ -1,5 +1,8 @@
 package com.vissoft.vn.dbdocs.infrastructure.config;
 
+import java.util.Arrays;
+import java.util.List;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -12,9 +15,6 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.Arrays;
-import java.util.List;
-
 @Configuration
 @EnableWebMvc
 @Slf4j
@@ -24,7 +24,9 @@ public class WebConfig implements WebMvcConfigurer {
             "http://localhost:4200",
             "http://localhost:3000",
             "http://127.0.0.1:4200",
-            "http://127.0.0.1:3000"
+            "http://127.0.0.1:3000",
+            "http://localhost:8080",
+            "http://localhost"
     );
     
     private static final List<String> ALLOWED_METHODS = Arrays.asList(
@@ -61,6 +63,7 @@ public class WebConfig implements WebMvcConfigurer {
         
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(ALLOWED_ORIGINS);
+        configuration.setAllowedOriginPatterns(Arrays.asList("*"));
         configuration.setAllowedMethods(ALLOWED_METHODS);
         configuration.setAllowedHeaders(ALLOWED_HEADERS);
         configuration.setExposedHeaders(EXPOSED_HEADERS);
