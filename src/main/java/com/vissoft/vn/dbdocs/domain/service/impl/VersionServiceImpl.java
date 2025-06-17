@@ -23,9 +23,11 @@ import com.vissoft.vn.dbdocs.application.dto.VersionCreateRequest;
 import com.vissoft.vn.dbdocs.application.dto.VersionDTO;
 import com.vissoft.vn.dbdocs.domain.entity.ChangeLog;
 import com.vissoft.vn.dbdocs.domain.entity.Project;
+import com.vissoft.vn.dbdocs.domain.entity.Users;
 import com.vissoft.vn.dbdocs.domain.entity.Version;
 import com.vissoft.vn.dbdocs.domain.repository.ChangeLogRepository;
 import com.vissoft.vn.dbdocs.domain.repository.ProjectRepository;
+import com.vissoft.vn.dbdocs.domain.repository.UserRepository;
 import com.vissoft.vn.dbdocs.domain.repository.VersionRepository;
 import com.vissoft.vn.dbdocs.domain.service.ChangeLogService;
 import com.vissoft.vn.dbdocs.domain.service.ProjectAccessService;
@@ -52,6 +54,7 @@ public class VersionServiceImpl implements VersionService {
     private final VersionRepository versionRepository;
     private final ProjectRepository projectRepository;
     private final ChangeLogRepository changeLogRepository;
+    private final UserRepository userRepository;
     private final VersionMapper versionMapper;
     private final ChangeLogMapper changeLogMapper;
     private final ChangeLogService changeLogService;
@@ -240,7 +243,19 @@ public class VersionServiceImpl implements VersionService {
             
             ChangeLogDTO changeLogDTO = null;
             if (changeLog != null) {
-                changeLogDTO = changeLogMapper.toDTO(changeLog);
+                // Lấy người tạo và người chỉnh sửa changelog
+                Users changeLogCreator = null;
+                Users changeLogModifier = null;
+                
+                if (changeLog.getCreatedBy() != null) {
+                    changeLogCreator = userRepository.findById(changeLog.getCreatedBy()).orElse(null);
+                }
+                
+                if (changeLog.getModifiedBy() != null) {
+                    changeLogModifier = userRepository.findById(changeLog.getModifiedBy()).orElse(null);
+                }
+                
+                changeLogDTO = changeLogMapper.toDTOWithUserInfo(changeLog, changeLogCreator, changeLogModifier);
                 log.debug("Found changelog: {} with content length: {} bytes", 
                         changeLog.getCodeChangeLog(), 
                         changeLog.getContent() != null ? changeLog.getContent().length() : 0);
@@ -248,8 +263,14 @@ public class VersionServiceImpl implements VersionService {
                 log.warn("Changelog not found for version: {}", versionId);
             }
             
+            // Lấy thông tin người tạo version
+            Users versionCreator = null;
+            if (version.getCreatedBy() != null) {
+                versionCreator = userRepository.findById(version.getCreatedBy()).orElse(null);
+            }
+            
             log.info("Successfully retrieved version: {}", versionId);
-            return versionMapper.toDTOWithChangeLog(version, changeLogDTO);
+            return versionMapper.toDTOWithCreator(version, changeLogDTO, versionCreator);
         } catch (BaseException e) {
             log.error("Base exception occurred while fetching version: {}", e.getMessage());
             throw e;
@@ -284,7 +305,18 @@ public class VersionServiceImpl implements VersionService {
             List<Version> versions = versionRepository.findByProjectIdOrderByCodeVersionDesc(projectId);
             log.info("Found {} versions for project: {}", versions.size(), projectId);
             
-            log.debug("Mapping versions to DTOs with associated changelogs");
+            // Lấy danh sách người dùng liên quan đến versions
+            Map<String, Users> userCache = new HashMap<>();
+            
+            // Lấy thông tin người tạo và người chỉnh sửa cho mỗi version
+            for (Version version : versions) {
+                if (version.getCreatedBy() != null && !userCache.containsKey(version.getCreatedBy())) {
+                    userRepository.findById(version.getCreatedBy())
+                        .ifPresent(user -> userCache.put(version.getCreatedBy(), user));
+                }
+            }
+            
+            log.debug("Mapping versions to DTOs with associated changelogs and creator info");
             return versions.stream()
                     .map(version -> {
                         log.trace("Processing version: {}, code: {}", version.getId(), version.getCodeVersion());
@@ -293,13 +325,22 @@ public class VersionServiceImpl implements VersionService {
                         
                         ChangeLogDTO changeLogDTO = null;
                         if (changeLog != null) {
-                            changeLogDTO = changeLogMapper.toDTO(changeLog);
-                            log.trace("Found changelog: {} for version", changeLog.getCodeChangeLog());
+                            // Lấy người tạo và người chỉnh sửa changelog
+                            Users creator = userCache.get(changeLog.getCreatedBy());
+                            Users modifier = userCache.get(changeLog.getModifiedBy());
+                            
+                            // Sử dụng mapper với thông tin người dùng
+                            changeLogDTO = changeLogMapper.toDTOWithUserInfo(changeLog, creator, modifier);
+                            log.trace("Found changelog: {} for version with creator info", changeLog.getCodeChangeLog());
                         } else {
                             log.warn("Changelog not found for version: {}", version.getId());
                         }
                         
-                        return versionMapper.toDTOWithChangeLog(version, changeLogDTO);
+                        // Lấy thông tin người tạo version
+                        Users versionCreator = userCache.get(version.getCreatedBy());
+                        
+                        // Sử dụng mapper mới để thêm thông tin người tạo trực tiếp vào VersionDTO
+                        return versionMapper.toDTOWithCreator(version, changeLogDTO, versionCreator);
                     })
                     .collect(Collectors.toList());
         } catch (BaseException e) {

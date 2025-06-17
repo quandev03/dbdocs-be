@@ -19,4 +19,9 @@ public class VersionDTO {
     private String content;
     private Instant createdDate;
     private String createdBy;
+    
+    // Thông tin người tạo
+    private String creatorName;
+    private String creatorEmail;
+    private String creatorAvatarUrl;
 } 
