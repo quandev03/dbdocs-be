@@ -108,7 +108,7 @@ const AuthUtils = {
             
             // Thêm redirect_uri vào URL nếu cần
             let authUrl = url;
-            const currentOrigin = window.location.origin;
+            const currentOrigin = '10.10.100.90:8081';
             
             // Thêm redirect_uri vào URL
             if (url.indexOf('?') !== -1) {
