@@ -124,4 +124,11 @@ public final class Constants {
         public static final int MAX_USERNAME_LENGTH = 50;
         public static final String EMAIL_REGEX = "^[a-zA-Z0-9_+&*-]+(?:\\.[a-zA-Z0-9_+&*-]+)*@(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,7}$";
     }
+
+    public static final class Permission {
+        public static final int OWNER = 1;
+        public static final int VIEWER = 2;
+        public static final int EDITOR = 3;
+        public static final int DEN = 4;
+    }
 } 

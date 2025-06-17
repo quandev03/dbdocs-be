@@ -5,6 +5,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import com.vissoft.vn.dbdocs.application.dto.ProjectDTO;
+import com.vissoft.vn.dbdocs.domain.entity.Project;
+import com.vissoft.vn.dbdocs.domain.repository.ProjectRepository;
+import com.vissoft.vn.dbdocs.infrastructure.constant.Constants;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -75,6 +79,15 @@ public class ChangeLogServiceImpl implements ChangeLogService {
     @Transactional
     public ChangeLogDTO createChangeLog(ChangeLogCreateRequest request) {
         log.info("Creating new changelog for project: {}", request.getProjectId());
+        String currentUserId = securityUtils.getCurrentUserId();
+        Integer permission = projectAccessService.checkUserAccess(request.getProjectId(), currentUserId);
+        if (permission == null) {
+            log.error("User {} does not have permission to access project {}", currentUserId, request.getProjectId());
+            throw BaseException.of(ErrorCode.PROJECT_ACCESS_DENIED, HttpStatus.FORBIDDEN);
+        } else if(permission == Constants.Permission.VIEWER) {
+            log.error("User {} does not have permission to access project {}", currentUserId, request.getProjectId());
+            throw BaseException.of(ErrorCode.PROJECT_ACCESS_DENIED, HttpStatus.FORBIDDEN);
+        }
         
         ChangeLog changeLog = changeLogMapper.createRequestToEntity(request);
         changeLog.setCodeChangeLog(generateCodeChangeLog(request.getProjectId()));

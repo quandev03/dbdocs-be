@@ -128,7 +128,7 @@ public class ProjectManagerServiceImpl implements ProjectManagerService {
             
             return projects.stream()
                     .map(projectMapper::toDTO)
-                    .collect(Collectors.toList());
+                    .toList();
         } catch (Exception e) {
             log.error("Error fetching projects for user: {}", currentUserId, e);
             throw BaseException.of(ErrorCode.INTERNAL_SERVER_ERROR, HttpStatus.INTERNAL_SERVER_ERROR);
@@ -181,7 +181,7 @@ public class ProjectManagerServiceImpl implements ProjectManagerService {
             // Lấy danh sách projectId từ projectAccesses
             List<String> projectIds = projectAccesses.stream()
                     .map(ProjectAccess::getProjectId)
-                    .collect(Collectors.toList());
+                    .toList();
             
             // Tìm tất cả các project theo danh sách projectId
             List<Project> projects = projectRepository.findAllById(projectIds);
@@ -189,7 +189,7 @@ public class ProjectManagerServiceImpl implements ProjectManagerService {
             // Loại bỏ các project mà user là owner (vì đã được trả về trong getAllProjects)
             List<Project> sharedProjects = projects.stream()
                     .filter(project -> !project.getOwnerId().equals(currentUserId))
-                    .collect(Collectors.toList());
+                    .toList();
             
             log.info("Processing {} shared projects with owner information", sharedProjects.size());
             

@@ -80,7 +80,7 @@ public class VersionServiceImpl implements VersionService {
                         return BaseException.of(ErrorCode.PROJECT_NOT_FOUND);
                     });
             
-            if (!project.getOwnerId().equals(currentUserId)) {
+            if (!project.getOwnerId().equals(currentUserId) && projectAccessService.checkUserPermissionLevel(request.getProjectId(), currentUserId) != Constants.Permission.EDITOR) {
                 log.error("Permission denied - user: {} is not owner of project: {}", 
                         currentUserId, request.getProjectId());
                 throw BaseException.of(ErrorCode.NOT_PROJECT_OWNER, HttpStatus.FORBIDDEN);

@@ -3,6 +3,7 @@ package com.vissoft.vn.dbdocs.domain.service.impl;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.vissoft.vn.dbdocs.infrastructure.constant.Constants;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -182,13 +183,13 @@ public class ProjectAccessServiceImpl implements ProjectAccessService {
             }
             
             // Nếu là private hoặc protected, kiểm tra trong bảng access
-            Integer permission = projectAccessRepository.findByProjectIdAndIdentifier(projectId, user.getSocialId())
+            Integer permission = projectAccessRepository.findByProjectIdAndIdentifier(projectId, user.getUserId())
                     .map(ProjectAccess::getPermission)
                     .orElse(null);
             
             if (permission != null) {
                 log.info("User has explicit permission: {} for project: {}", 
-                        permission == 1 ? "VIEW" : "EDIT", projectId);
+                        permission == Constants.Permission.OWNER ? "OWNER" : permission == Constants.Permission.VIEWER ? "VIEW" :"EDIT", projectId);
             } else {
                 log.info("User has no access to project: {}", projectId);
             }
@@ -410,7 +411,7 @@ public class ProjectAccessServiceImpl implements ProjectAccessService {
             }
             
             // Kiểm tra quyền trong bảng access
-            Integer permission = projectAccessRepository.findByProjectIdAndIdentifier(projectId, user.getSocialId())
+            Integer permission = projectAccessRepository.findByProjectIdAndIdentifier(projectId, user.getUserId())
                     .map(ProjectAccess::getPermission)
                     .orElse(null);
             
