@@ -173,13 +173,13 @@ public class ProjectAccessServiceImpl implements ProjectAccessService {
             // Nếu là chủ sở hữu, có quyền edit
             if (project.getOwnerId().equals(userId)) {
                 log.info("User is project owner - granted EDIT permission");
-                return 2; // Edit permission
+                return 1; // Edit permission
             }
             
             // Nếu là public, có quyền view
             if (project.getVisibility() == 1) {
                 log.info("Project is public - granted VIEW permission");
-                return 1; // View permission
+                return 2; // View permission
             }
             
             // Nếu là private hoặc protected, kiểm tra trong bảng access

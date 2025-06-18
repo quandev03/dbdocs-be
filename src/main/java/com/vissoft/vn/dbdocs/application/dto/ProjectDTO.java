@@ -17,6 +17,8 @@ public class ProjectDTO {
     private String description;
     private String passwordShare;
     private Integer visibility;
+    private String ownerAvatarUrl;
+    private String ownerEmail;
     private String ownerId;
     private Date createdDate;
     private String createdBy;

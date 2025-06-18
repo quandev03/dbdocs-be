@@ -53,7 +53,19 @@ public class ProjectManagerServiceImpl implements ProjectManagerService {
             log.info("Owner added to project access - projectId: {}, ownerId: {}", 
                     savedProject.getProjectId(), currentUserId);
             
-            return projectMapper.toDTO(savedProject);
+            // Get current user information
+            Users currentUser = userRepository.findById(currentUserId).orElse(null);
+            ProjectDTO projectDTO = projectMapper.toDTO(savedProject);
+            
+            // Set owner information
+            if (currentUser != null) {
+                projectDTO.setOwnerEmail(currentUser.getEmail());
+                projectDTO.setOwnerAvatarUrl(currentUser.getAvatarUrl());
+                log.debug("Added owner information - email: {}, avatarUrl: {}", 
+                        currentUser.getEmail(), currentUser.getAvatarUrl());
+            }
+            
+            return projectDTO;
         } catch (Exception e) {
             log.error("Error creating project", e);
             throw e;
@@ -87,7 +99,19 @@ public class ProjectManagerServiceImpl implements ProjectManagerService {
             Project updatedProject = projectRepository.save(project);
             log.info("Project updated successfully - ID: {}", updatedProject.getProjectId());
             
-            return projectMapper.toDTO(updatedProject);
+            // Get owner information
+            Users owner = userRepository.findById(updatedProject.getOwnerId()).orElse(null);
+            ProjectDTO projectDTO = projectMapper.toDTO(updatedProject);
+            
+            // Set owner information
+            if (owner != null) {
+                projectDTO.setOwnerEmail(owner.getEmail());
+                projectDTO.setOwnerAvatarUrl(owner.getAvatarUrl());
+                log.debug("Added owner information - email: {}, avatarUrl: {}", 
+                        owner.getEmail(), owner.getAvatarUrl());
+            }
+            
+            return projectDTO;
         } catch (BaseException e) {
             throw e;
         } catch (Exception e) {
@@ -108,7 +132,21 @@ public class ProjectManagerServiceImpl implements ProjectManagerService {
                     });
             
             log.info("Project found: {}", project.getProjectCode());
-            return projectMapper.toDTO(project);
+            
+            // Get owner information
+            Users owner = userRepository.findById(project.getOwnerId()).orElse(null);
+            ProjectDTO projectDTO = projectMapper.toDTO(project);
+            
+            if (owner != null) {
+                projectDTO.setOwnerEmail(owner.getEmail());
+                projectDTO.setOwnerAvatarUrl(owner.getAvatarUrl());
+                log.debug("Added owner information - email: {}, avatarUrl: {}", 
+                        owner.getEmail(), owner.getAvatarUrl());
+            } else {
+                log.warn("Owner not found for project: {}", project.getProjectId());
+            }
+            
+            return projectDTO;
         } catch (BaseException e) {
             throw e;
         } catch (Exception e) {
@@ -126,8 +164,21 @@ public class ProjectManagerServiceImpl implements ProjectManagerService {
             List<Project> projects = projectRepository.findByOwnerId(currentUserId);
             log.info("Found {} projects for user", projects.size());
             
+            // Get current user information for setting owner details
+            Users currentUser = userRepository.findById(currentUserId).orElse(null);
+            
             return projects.stream()
-                    .map(projectMapper::toDTO)
+                    .map(project -> {
+                        ProjectDTO dto = projectMapper.toDTO(project);
+                        
+                        // Since these are the user's own projects, set owner info from current user
+                        if (currentUser != null) {
+                            dto.setOwnerEmail(currentUser.getEmail());
+                            dto.setOwnerAvatarUrl(currentUser.getAvatarUrl());
+                        }
+                        
+                        return dto;
+                    })
                     .toList();
         } catch (Exception e) {
             log.error("Error fetching projects for user: {}", currentUserId, e);
