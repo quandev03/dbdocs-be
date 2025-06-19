@@ -1,12 +1,9 @@
 package com.vissoft.vn.dbdocs.domain.service.impl;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
+import com.vissoft.vn.dbdocs.infrastructure.util.DataUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -67,20 +64,19 @@ public class VersionServiceImpl implements VersionService {
     @Override
     @Transactional
     public VersionDTO createVersion(VersionCreateRequest request) {
-        String currentUserId = securityUtils.getCurrentUserId();
+        String currentUserId = SecurityUtils.getCurrentUserId();
         log.info("Starting version creation process - ProjectID: {}, ChangeLogID: {}, UserID: {}", 
                 request.getProjectId(), request.getChangeLogId(), currentUserId);
         
         try {
             log.debug("Validating project existence and ownership");
-            // Kiểm tra project tồn tại và người dùng có quyền
-            Project project = projectRepository.findById(request.getProjectId())
-                    .orElseThrow(() -> {
-                        log.error("Project not found with ID: {}", request.getProjectId());
-                        return BaseException.of(ErrorCode.PROJECT_NOT_FOUND);
-                    });
+            // Check if a project exists and user is owner or has editor permission
+            Project project = getAndCheckProject(request.getProjectId());
             
-            if (!project.getOwnerId().equals(currentUserId) && projectAccessService.checkUserPermissionLevel(request.getProjectId(), currentUserId) != Constants.Permission.EDITOR) {
+            if (
+                    !Objects.equals(project.getOwnerId(), currentUserId) &&
+                    !Objects.equals(projectAccessService.checkUserPermissionLevel(request.getProjectId(), currentUserId), Constants.Permission.EDITOR )
+            ) {
                 log.error("Permission denied - user: {} is not owner of project: {}", 
                         currentUserId, request.getProjectId());
                 throw BaseException.of(ErrorCode.NOT_PROJECT_OWNER, HttpStatus.FORBIDDEN);
@@ -89,11 +85,11 @@ public class VersionServiceImpl implements VersionService {
             
             log.debug("Validating changelog existence and project association");
             
-            // Kiểm tra changelog tồn tại và thuộc project
+            // Check if changeLogId is provided, if not, find the latest changelog
             ChangeLog changeLog;
             
             // If changeLogId is null, find the latest changelog
-            if (request.getChangeLogId() == null) {
+            if (DataUtils.isNull(request.getChangeLogId())) {
                 log.info("ChangeLogID is null, finding the latest changelog for project: {}", request.getProjectId());
                 changeLog = changeLogRepository.findLatestChangeLogByProjectId(request.getProjectId())
                         .orElseThrow(() -> {
@@ -105,13 +101,8 @@ public class VersionServiceImpl implements VersionService {
                 request.setChangeLogId(changeLog.getId());
                 log.info("Found latest changelog with ID: {}", changeLog.getId());
             } else {
-                changeLog = changeLogRepository.findById(request.getChangeLogId())
-                        .orElseThrow(() -> {
-                            log.error("Changelog not found with ID: {}", request.getChangeLogId());
-                            return BaseException.of(ErrorCode.CHANGELOG_NOT_FOUND);
-                        });
-                
-                if (!changeLog.getProjectId().equals(request.getProjectId())) {
+                changeLog = getAndCheckChangeLog(request.getChangeLogId());
+                if (!Objects.equals(changeLog.getProjectId(), request.getProjectId())) {
                     log.error("Changelog {} does not belong to project {}", 
                             request.getChangeLogId(), request.getProjectId());
                     throw BaseException.of(ErrorCode.INVALID_CHANGELOG_DATA, HttpStatus.BAD_REQUEST);
@@ -119,10 +110,10 @@ public class VersionServiceImpl implements VersionService {
             }
             
             log.debug("Changelog validation successful - Content length: {} bytes", 
-                    changeLog.getContent() != null ? changeLog.getContent().length() : 0);
+                    DataUtils.notNull(changeLog.getContent()) ? changeLog.getContent().length() : 0);
             
             log.debug("Determining next version number");
-            // Lấy version hiện tại và tăng lên 1
+            // get the latest version anh increment the version number
             Version latestVersion = versionRepository.findLatestVersionByProjectId(request.getProjectId())
                     .orElse(null);
             
@@ -137,18 +128,16 @@ public class VersionServiceImpl implements VersionService {
             
             log.info("Creating new version with number: {}", newVersionNumber);
             
-            // Tính toán diff giữa phiên bản trước và phiên bản mới
-            String diffChangeJson = null;
+            // Calculate diffChange JSON
+            String diffChangeJson;
             if (latestVersion != null) {
                 log.debug("Calculating diff with previous version");
                 try {
-                    // So sánh phiên bản trước đó với phiên bản mới (changelog hiện tại)
                     VersionComparisonDTO comparisonResult = versionComparisonService.compareVersions(
                             request.getProjectId(), 
                             latestVersion.getCodeVersion(), 
-                            null);  // null để so sánh với changelog mới nhất
+                            null);
                     
-                    // Chuyển kết quả so sánh thành JSON
                     diffChangeJson = objectMapper.writeValueAsString(comparisonResult);
                     log.debug("Generated diff JSON - length: {} bytes", 
                             diffChangeJson != null ? diffChangeJson.length() : 0);
@@ -188,7 +177,7 @@ public class VersionServiceImpl implements VersionService {
             // Tạo version mới
             Version version = versionMapper.createRequestToEntity(request);
             version.setCodeVersion(newVersionNumber);
-            // Lưu diffChange dưới dạng JSON
+            // Save the project ID and changeLog ID
             version.setDiffChange(diffChangeJson);
             
             log.debug("Saving new version to database with diff data");
@@ -196,12 +185,12 @@ public class VersionServiceImpl implements VersionService {
             log.info("Version created successfully with ID: {}, codeVersion: {}", 
                     savedVersion.getId(), savedVersion.getCodeVersion());
             
-            // Cập nhật codeChangeLog của changeLog
+            // update changelog version to match new version number
             log.debug("Updating changelog version to match new version number");
             changeLogService.updateChangeLogVersion(request.getChangeLogId(), newVersionNumber);
             log.info("Updated changelog version for changeLogId: {}", request.getChangeLogId());
             
-            // Lấy thông tin changeLog đã cập nhật
+            // get information of the updated changelog
             log.debug("Retrieving updated changelog");
             ChangeLog updatedChangeLog = changeLogRepository.findById(request.getChangeLogId())
                     .orElseThrow(() -> {
@@ -286,18 +275,18 @@ public class VersionServiceImpl implements VersionService {
         
         try {
             log.debug("Validating project existence");
-            // Kiểm tra project tồn tại
+            // Check if the project exists
             if (!projectRepository.existsById(projectId)) {
-                log.error("Project not found with ID: {}", projectId);
+                log.error(ErrorCode.PROJECT_NOT_FOUND.name());
                 throw BaseException.of(ErrorCode.PROJECT_NOT_FOUND);
             }
             
-            // Kiểm tra quyền truy cập project
-            String currentUserId = securityUtils.getCurrentUserId();
+            // Check access permission for the current user
+            String currentUserId = SecurityUtils.getCurrentUserId();
             Integer permission = projectAccessService.checkUserAccess(projectId, currentUserId);
             
             if (permission == null) {
-                log.error("User {} does not have permission to access project {}", currentUserId, projectId);
+                log.error(ErrorCode.PROJECT_ACCESS_DENIED.name());
                 throw BaseException.of(ErrorCode.PROJECT_ACCESS_DENIED, HttpStatus.FORBIDDEN);
             }
             
@@ -305,12 +294,12 @@ public class VersionServiceImpl implements VersionService {
             List<Version> versions = versionRepository.findByProjectIdOrderByCodeVersionDesc(projectId);
             log.info("Found {} versions for project: {}", versions.size(), projectId);
             
-            // Lấy danh sách người dùng liên quan đến versions
+            // Get a list of user IDs to fetch
             Map<String, Users> userCache = new HashMap<>();
             
-            // Lấy thông tin người tạo và người chỉnh sửa cho mỗi version
+            // get all unique user IDs from versions and changelogs
             for (Version version : versions) {
-                if (version.getCreatedBy() != null && !userCache.containsKey(version.getCreatedBy())) {
+                if (DataUtils.notNull(version.getCreatedBy()) && !userCache.containsKey(version.getCreatedBy())) {
                     userRepository.findById(version.getCreatedBy())
                         .ifPresent(user -> userCache.put(version.getCreatedBy(), user));
                 }
@@ -325,7 +314,7 @@ public class VersionServiceImpl implements VersionService {
                         
                         ChangeLogDTO changeLogDTO = null;
                         if (changeLog != null) {
-                            // Lấy người tạo và người chỉnh sửa changelog
+                            // Get information of creator and modifier from userCache
                             Users creator = userCache.get(changeLog.getCreatedBy());
                             Users modifier = userCache.get(changeLog.getModifiedBy());
                             
@@ -336,13 +325,13 @@ public class VersionServiceImpl implements VersionService {
                             log.warn("Changelog not found for version: {}", version.getId());
                         }
                         
-                        // Lấy thông tin người tạo version
+                        // get information of the version creator from userCache
                         Users versionCreator = userCache.get(version.getCreatedBy());
                         
-                        // Sử dụng mapper mới để thêm thông tin người tạo trực tiếp vào VersionDTO
+                        // use mapper to convert to DTO
                         return versionMapper.toDTOWithCreator(version, changeLogDTO, versionCreator);
                     })
-                    .collect(Collectors.toList());
+                    .toList();
         } catch (BaseException e) {
             log.error("Base exception occurred while fetching project versions: {}", e.getMessage());
             throw e;
@@ -358,13 +347,13 @@ public class VersionServiceImpl implements VersionService {
                 request.getProjectId(), request.getFromVersion(), request.getToVersion(), request.getDialect());
         
         try {
-            // Kiểm tra project tồn tại
+            // Check if the project exists
             if (!projectRepository.existsById(request.getProjectId())) {
-                log.error("Project not found with ID: {}", request.getProjectId());
+                log.error(ErrorCode.PROJECT_NOT_FOUND.name());
                 throw BaseException.of(ErrorCode.PROJECT_NOT_FOUND);
             }
             
-            // Sử dụng VersionComparisonService để lấy sự khác biệt giữa hai phiên bản
+            // Use VersionComparisonService to compare versions
             VersionComparisonDTO comparisonDTO = versionComparisonService.compareVersions(
                     request.getProjectId(), 
                     request.getFromVersion(), 
@@ -372,13 +361,9 @@ public class VersionServiceImpl implements VersionService {
             
             log.debug("Version comparison completed, generating DDL script");
             
-            // Tạo DDL script từ thông tin so sánh
+            // Create a StringBuilder to hold the DDL script
             StringBuilder ddlScript = new StringBuilder();
-            
-            // Xác định tên dialect
             String dialectName = getDialectName(request.getDialect());
-            
-            // Thêm header comment
             ddlScript.append(Constants.SQL.Formatting.COMMENT_PREFIX).append("DDL Script generated for project: ").append(request.getProjectId())
                     .append(Constants.SQL.Formatting.NEW_LINE).append(Constants.SQL.Formatting.COMMENT_PREFIX).append("From version: ").append(request.getFromVersion())
                     .append(Constants.SQL.Formatting.NEW_LINE).append(Constants.SQL.Formatting.COMMENT_PREFIX).append("To version: ").append(request.getToVersion())
@@ -408,7 +393,7 @@ public class VersionServiceImpl implements VersionService {
                     break;
             }
             
-            log.info("DDL script generated successfully with length: {} characters", ddlScript.length());
+            logCreateDDLSuccess(ddlScript.toString());
             
             // Sử dụng mapper để tạo response
             return ddlScriptResponseMapper.toDdlScriptResponse(request, ddlScript.toString());
@@ -422,20 +407,14 @@ public class VersionServiceImpl implements VersionService {
     }
     
     private String getDialectName(Integer dialectCode) {
-        switch (dialectCode) {
-            case Constants.SQL.Dialect.MYSQL:
-                return Constants.SQL.Dialect.MYSQL_NAME;
-            case Constants.SQL.Dialect.MARIADB:
-                return Constants.SQL.Dialect.MARIADB_NAME;
-            case Constants.SQL.Dialect.POSTGRESQL:
-                return Constants.SQL.Dialect.POSTGRESQL_NAME;
-            case Constants.SQL.Dialect.ORACLE:
-                return Constants.SQL.Dialect.ORACLE_NAME;
-            case Constants.SQL.Dialect.SQL_SERVER:
-                return Constants.SQL.Dialect.SQL_SERVER_NAME;
-            default:
-                return Constants.SQL.Dialect.UNKNOWN_NAME;
-        }
+        return switch (dialectCode) {
+            case Constants.SQL.Dialect.MYSQL -> Constants.SQL.Dialect.MYSQL_NAME;
+            case Constants.SQL.Dialect.MARIADB -> Constants.SQL.Dialect.MARIADB_NAME;
+            case Constants.SQL.Dialect.POSTGRESQL -> Constants.SQL.Dialect.POSTGRESQL_NAME;
+            case Constants.SQL.Dialect.ORACLE -> Constants.SQL.Dialect.ORACLE_NAME;
+            case Constants.SQL.Dialect.SQL_SERVER -> Constants.SQL.Dialect.SQL_SERVER_NAME;
+            default -> Constants.SQL.Dialect.UNKNOWN_NAME;
+        };
     }
     
     /**
@@ -916,7 +895,7 @@ public class VersionServiceImpl implements VersionService {
         try {
             // Parse the diffChanges JSON string into a JsonNode
             String diffChangesStr = comparisonDTO.getDiffChanges();
-            if (diffChangesStr == null || diffChangesStr.isEmpty()) {
+            if (DataUtils.isNull(diffChangesStr) || diffChangesStr.isEmpty()) {
                 log.warn("No diff changes found to generate DDL script");
                 return;
             }
@@ -925,20 +904,20 @@ public class VersionServiceImpl implements VersionService {
             JsonNode diffChanges = objectMapper.readTree(diffChangesStr);
             logJson("Parsed diffChanges", diffChanges);
             
-            // Add comment for table changes section
+            // Add comment for a table changes section
             ddlScript.append(Constants.SQL.Formatting.COMMENT_PREFIX).append("Table changes").append(Constants.SQL.Formatting.NEW_LINE);
             
             boolean changesMade = false;
             
             // Process added tables
             JsonNode addedTables = diffChanges.path("addedTables");
-            if (!addedTables.isMissingNode() && addedTables.isArray() && addedTables.size() > 0) {
+            if (!addedTables.isMissingNode() && addedTables.isArray() && !addedTables.isEmpty()) {
                 changesMade = true;
                 for (JsonNode table : addedTables) {
                     String tableName = table.asText();
                     log.debug("Processing added table: {}", tableName);
                     
-                    // For the posts table, explicitly create it
+                    // For the post-table, explicitly create it
                     if ("posts".equals(tableName)) {
                         ddlScript.append(Constants.SQL.Keywords.CREATE_TABLE).append(" ")
                                 .append(Constants.SQL.Identifiers.SQL_SERVER_IDENTIFIER_START).append(tableName)
@@ -1628,5 +1607,27 @@ public class VersionServiceImpl implements VersionService {
             log.error("Error generating changelog DDL script: {}", e.getMessage(), e);
             throw BaseException.of(ErrorCode.INTERNAL_SERVER_ERROR, HttpStatus.INTERNAL_SERVER_ERROR);
         }
+    }
+
+    private Project getAndCheckProject(String projectId) {
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> {
+                    log.error(ErrorCode.PROJECT_NOT_FOUND.name());
+                    return BaseException.of(ErrorCode.PROJECT_NOT_FOUND);
+                });
+        log.info("Project found: {}", project.getProjectCode());
+        return project;
+    }
+    private ChangeLog getAndCheckChangeLog(String changeLogId) {
+        ChangeLog changeLog = changeLogRepository.findById(changeLogId)
+                .orElseThrow(() -> {
+                    log.error("Changelog not found with ID: {}", changeLogId);
+                    return BaseException.of(ErrorCode.CHANGELOG_NOT_FOUND);
+                });
+        log.info("ChangeLog found: {}", changeLog.getCodeChangeLog());
+        return changeLog;
+    }
+    private void logCreateDDLSuccess(String ddlScript) {
+        log.info("DDL script generated successfully with length: {} characters", ddlScript.length());
     }
 } 

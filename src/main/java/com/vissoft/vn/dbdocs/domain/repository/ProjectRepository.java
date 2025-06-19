@@ -10,4 +10,5 @@ import java.util.Optional;
 @Repository
 public interface ProjectRepository extends JpaRepository<Project, String> {
     List<Project> findByOwnerId(String ownerId);
+    boolean existsByProjectId(String projectId);
 } 

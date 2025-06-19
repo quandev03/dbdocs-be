@@ -48,9 +48,4 @@ public interface ProjectAccessService {
      * Lấy danh sách người dùng có quyền truy cập vào dự án
      */
     List<ProjectAccessDTO> getUsersWithAccessToProject(String projectId);
-    
-    /**
-     * Thêm owner vào danh sách người có quyền truy cập dự án
-     */
-    void addOwnerToProject(String projectId, String ownerId);
 } 

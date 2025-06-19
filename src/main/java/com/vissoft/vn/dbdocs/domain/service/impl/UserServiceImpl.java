@@ -3,7 +3,6 @@ package com.vissoft.vn.dbdocs.domain.service.impl;
 import com.vissoft.vn.dbdocs.domain.service.UserService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-
 import com.vissoft.vn.dbdocs.application.dto.UserDTO;
 import com.vissoft.vn.dbdocs.domain.entity.Users;
 import com.vissoft.vn.dbdocs.domain.repository.UserRepository;
@@ -21,21 +20,18 @@ import lombok.extern.slf4j.Slf4j;
 public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final UserMapper userMapper;
-    private final SecurityUtils securityUtils;
     
     @Override
     public UserDTO getCurrentUser() {
-        String currentUserId = securityUtils.getCurrentUserId();
+        String currentUserId = SecurityUtils.getCurrentUserId();
         log.info("Getting current user information - userId: {}", currentUserId);
         
         try {
             Users user = userRepository.findById(currentUserId)
                     .orElseThrow(() -> {
-                        log.error("User not found - userId: {}", currentUserId);
+                        log.error(ErrorCode.USER_NOT_FOUND.name());
                         return BaseException.of(ErrorCode.USER_NOT_FOUND);
                     });
-            
-            log.info("Found user: {} with email: {}", user.getUserId(), user.getEmail());
             return userMapper.toDTO(user);
         } catch (BaseException e) {
             throw e;

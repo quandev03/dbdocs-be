@@ -2,8 +2,10 @@ package com.vissoft.vn.dbdocs.domain.service.impl;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 import com.vissoft.vn.dbdocs.infrastructure.constant.Constants;
+import com.vissoft.vn.dbdocs.infrastructure.util.DataUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -36,47 +38,32 @@ public class ProjectAccessServiceImpl implements ProjectAccessService {
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
     private final ProjectAccessMapper projectAccessMapper;
-    private final SecurityUtils securityUtils;
     private final PasswordEncoder passwordEncoder;
 
     @Override
     @Transactional
     public ProjectAccessDTO addUserToProject(ProjectAccessRequest request) {
-        String currentUserId = securityUtils.getCurrentUserId();
         log.info("Adding user to project - projectId: {}, email/username: {}, by userId: {}", 
-                request.getProjectId(), request.getEmailOrUsername(), currentUserId);
-        
+                request.getProjectId(), request.getEmailOrUsername(), SecurityUtils.getCurrentUserId());
         try {
-            // Kiểm tra dự án tồn tại và người dùng hiện tại có quyền sở hữu
-            Project project = projectRepository.findById(request.getProjectId())
-                    .orElseThrow(() -> {
-                        log.error("Project not found - projectId: {}", request.getProjectId());
-                        return BaseException.of(ErrorCode.PROJECT_NOT_FOUND);
-                    });
-            
-            if (!project.getOwnerId().equals(currentUserId)) {
-                log.error("Permission denied - user: {} is not owner of project: {}", 
-                        currentUserId, request.getProjectId());
+            // Check if the project exists and this user is the owner
+            Project project = getAndCheckProjectById(request.getProjectId());
+            if (!Objects.equals(project.getOwnerId(), SecurityUtils.getCurrentUserId())) {
+                log.error(ErrorCode.NOT_PROJECT_OWNER.name());
                 throw BaseException.of(ErrorCode.NOT_PROJECT_OWNER, HttpStatus.FORBIDDEN);
             }
-            
-            // Tìm người dùng theo email
-            Users user = userRepository.findByEmail(request.getEmailOrUsername())
-                    .orElseThrow(() -> {
-                        log.error("User not found with email/username: {}", request.getEmailOrUsername());
-                        return BaseException.of(ErrorCode.USER_NOT_FOUND);
-                    });
-            
-            log.info("Found user: {} with socialId: {}", user.getEmail(), user.getUserId());
-            
-            // Kiểm tra người dùng đã được thêm vào dự án chưa
+
+            // Find information user by email or username
+            Users user = getAndCheckUserByEmail(request.getEmailOrUsername());
+
+            // Check if this current user already has access to the project
             if (projectAccessRepository.findByProjectIdAndIdentifier(request.getProjectId(), user.getUserId()).isPresent()) {
                 log.error("User already has access - socialId: {}, projectId: {}", 
                         user.getUserId(), request.getProjectId());
                 throw BaseException.of(ErrorCode.USER_ALREADY_HAS_ACCESS);
             }
             
-            // Thêm người dùng vào dự án
+            // Create a new ProjectAccess entry
             ProjectAccess projectAccess = new ProjectAccess();
             projectAccess.setProjectId(request.getProjectId());
             projectAccess.setIdentifier(user.getUserId());
@@ -86,10 +73,9 @@ public class ProjectAccessServiceImpl implements ProjectAccessService {
             ProjectAccess savedAccess = projectAccessRepository.save(projectAccess);
             log.info("User successfully added to project - socialId: {}, projectId: {}, permission: {}", 
                     user.getSocialId(), request.getProjectId(), request.getPermission());
-            
             return projectAccessMapper.toDTO(savedAccess);
         } catch (BaseException e) {
-            // Rethrow BaseException as it already contains error information
+            log.error("Error adding user to project", e);
             throw e;
         } catch (Exception e) {
             log.error("Unexpected error adding user to project", e);
@@ -100,33 +86,29 @@ public class ProjectAccessServiceImpl implements ProjectAccessService {
     @Override
     @Transactional
     public void changeProjectVisibility(ProjectVisibilityRequest request) {
-        String currentUserId = securityUtils.getCurrentUserId();
+        String currentUserId = SecurityUtils.getCurrentUserId();
         log.info("Changing project visibility - projectId: {}, visibility: {}, by userId: {}", 
                 request.getProjectId(), request.getVisibility(), currentUserId);
         
         try {
-            // Kiểm tra dự án tồn tại và người dùng hiện tại có quyền sở hữu
-            Project project = projectRepository.findById(request.getProjectId())
-                    .orElseThrow(() -> {
-                        log.error("Project not found - projectId: {}", request.getProjectId());
-                        return BaseException.of(ErrorCode.PROJECT_NOT_FOUND);
-                    });
-            
-            if (!project.getOwnerId().equals(currentUserId)) {
-                log.error("Permission denied - user: {} is not owner of project: {}", 
-                        currentUserId, request.getProjectId());
+            // Get information project by ID and check ownership
+            Project project = getAndCheckProjectById(request.getProjectId());
+            //Check if the current user is the owner of the project
+            if (!Objects.equals(project.getOwnerId(), currentUserId)) {
+                log.error(ErrorCode.NOT_PROJECT_OWNER.name());
                 throw BaseException.of(ErrorCode.NOT_PROJECT_OWNER, HttpStatus.FORBIDDEN);
             }
-            
-            // Kiểm tra loại visibility
-            if (request.getVisibility() < 1 || request.getVisibility() > 3) {
+            // Check the visibility type
+            if (
+                    request.getVisibility() < Constants.Visibility.PUBLIC ||
+                    request.getVisibility() > Constants.Visibility.PROTECTED
+            ) {
                 log.error("Invalid visibility type: {}", request.getVisibility());
                 throw BaseException.of(ErrorCode.INVALID_VISIBILITY_TYPE);
             }
-            
-            // Nếu là protected, kiểm tra mật khẩu
-            if (request.getVisibility() == 3) {
-                if (request.getPassword() == null || request.getPassword().isEmpty()) {
+            // Set password for protected visibility
+            if (Objects.equals(request.getVisibility(), Constants.Visibility.PROTECTED)) {
+                if (DataUtils.isNull(request.getPassword())) {
                     log.error("Password required for protected visibility");
                     throw BaseException.of(ErrorCode.PASSWORD_REQUIRED);
                 }
@@ -156,44 +138,28 @@ public class ProjectAccessServiceImpl implements ProjectAccessService {
         log.info("Checking user access - projectId: {}, userId: {}", projectId, userId);
         
         try {
-            // Kiểm tra dự án tồn tại
-            Project project = projectRepository.findById(projectId)
-                    .orElseThrow(() -> {
-                        log.error("Project not found - projectId: {}", projectId);
-                        return BaseException.of(ErrorCode.PROJECT_NOT_FOUND);
-                    });
+            Project project = getAndCheckProjectById(projectId);
             
-            // Kiểm tra người dùng
-            Users user = userRepository.findById(userId)
-                    .orElseThrow(() -> {
-                        log.error("User not found - userId: {}", userId);
-                        return BaseException.of(ErrorCode.USER_NOT_FOUND);
-                    });
+            // Check the project exists
+            Users user = getAndCheckUserById(userId);
             
-            // Nếu là chủ sở hữu, có quyền edit
+            // If the user is the owner of the project, grant EDIT permission
             if (project.getOwnerId().equals(userId)) {
                 log.info("User is project owner - granted EDIT permission");
-                return 1; // Edit permission
+                return Constants.Permission.OWNER; // Edit permission
             }
-            
-            // Nếu là public, có quyền view
-            if (project.getVisibility() == 1) {
-                log.info("Project is public - granted VIEW permission");
-                return 2; // View permission
-            }
-            
-            // Nếu là private hoặc protected, kiểm tra trong bảng access
+
+            // Check if the project is public
             Integer permission = projectAccessRepository.findByProjectIdAndIdentifier(projectId, user.getUserId())
                     .map(ProjectAccess::getPermission)
                     .orElse(null);
             
-            if (permission != null) {
-                log.info("User has explicit permission: {} for project: {}", 
-                        permission == Constants.Permission.OWNER ? "OWNER" : permission == Constants.Permission.VIEWER ? "VIEW" :"EDIT", projectId);
+            if (DataUtils.notNull(permission)) {
+                log.info("User has explicit permission - projectId: {}, permission: {}",
+                        projectId, permission);
             } else {
-                log.info("User has no access to project: {}", projectId);
+                return Constants.Permission.DEN;
             }
-            
             return permission;
         } catch (BaseException e) {
             throw e;
@@ -206,25 +172,20 @@ public class ProjectAccessServiceImpl implements ProjectAccessService {
     @Override
     @Transactional
     public ProjectAccessDTO changeUserPermission(ProjectPermissionRequest request) {
-        String currentUserId = securityUtils.getCurrentUserId();
+        String currentUserId = SecurityUtils.getCurrentUserId();
         log.info("Changing user permission - projectId: {}, identifier: {}, permission: {}, by userId: {}", 
                 request.getProjectId(), request.getIdentifier(), request.getPermission(), currentUserId);
-        
         try {
-            // Kiểm tra dự án tồn tại và người dùng hiện tại có quyền sở hữu
-            Project project = projectRepository.findById(request.getProjectId())
-                    .orElseThrow(() -> {
-                        log.error("Project not found - projectId: {}", request.getProjectId());
-                        return BaseException.of(ErrorCode.PROJECT_NOT_FOUND);
-                    });
-            
-            if (!project.getOwnerId().equals(currentUserId)) {
-                log.error("Permission denied - user: {} is not owner of project: {}", 
-                        currentUserId, request.getProjectId());
+            // Check if a project exists and the user is the owner
+            Project project = getAndCheckProjectById(request.getProjectId());
+
+            // Check if the current user is the owner of the project
+            if (!Objects.equals(project.getOwnerId(), currentUserId)) {
+                log.error(ErrorCode.NOT_PROJECT_OWNER.name());
                 throw BaseException.of(ErrorCode.NOT_PROJECT_OWNER, HttpStatus.FORBIDDEN);
             }
             
-            // Kiểm tra người dùng đã được thêm vào dự án chưa
+            // Check if the user exists
             ProjectAccess projectAccess = projectAccessRepository.findByProjectIdAndIdentifier(
                     request.getProjectId(), request.getIdentifier())
                     .orElseThrow(() -> {
@@ -233,7 +194,7 @@ public class ProjectAccessServiceImpl implements ProjectAccessService {
                         return BaseException.of(ErrorCode.USER_DOES_NOT_HAVE_ACCESS);
                     });
             
-            // Thay đổi quyền
+            // Change the permission level
             int oldPermission = projectAccess.getPermission();
             projectAccess.setPermission(request.getPermission());
             ProjectAccess savedAccess = projectAccessRepository.save(projectAccess);
@@ -241,9 +202,8 @@ public class ProjectAccessServiceImpl implements ProjectAccessService {
             log.info("User permission changed from {} to {} - identifier: {}, projectId: {}", 
                     oldPermission, request.getPermission(), request.getIdentifier(), request.getProjectId());
             
-            // Tìm thông tin người dùng
-            Users user = userRepository.findBySocialId(request.getIdentifier()).orElse(null);
-            
+            // Find the user by socialId or userId
+            Users user = getAndCheckUserById(projectAccess.getIdentifier());
             return projectAccessMapper.toDTOWithUser(savedAccess, user);
         } catch (BaseException e) {
             throw e;
@@ -256,25 +216,20 @@ public class ProjectAccessServiceImpl implements ProjectAccessService {
     @Override
     @Transactional
     public void removeUserFromProject(String projectId, String identifier) {
-        String currentUserId = securityUtils.getCurrentUserId();
+        String currentUserId = SecurityUtils.getCurrentUserId();
         log.info("Removing user from project - projectId: {}, identifier: {}, by userId: {}", 
                 projectId, identifier, currentUserId);
         
         try {
-            // Kiểm tra dự án tồn tại và người dùng hiện tại có quyền sở hữu
-            Project project = projectRepository.findById(projectId)
-                    .orElseThrow(() -> {
-                        log.error("Project not found - projectId: {}", projectId);
-                        return BaseException.of(ErrorCode.PROJECT_NOT_FOUND);
-                    });
-            
-            if (!project.getOwnerId().equals(currentUserId)) {
+            // check if a project exists and the user is the owner
+            Project project = getAndCheckProjectById(projectId);
+            if (!Objects.equals(project.getOwnerId(), currentUserId)) {
                 log.error("Permission denied - user: {} is not owner of project: {}", 
                         currentUserId, projectId);
                 throw BaseException.of(ErrorCode.NOT_PROJECT_OWNER, HttpStatus.FORBIDDEN);
             }
-            
-            // Xóa người dùng khỏi dự án
+
+            // Delete the project access entry
             projectAccessRepository.deleteByProjectIdAndIdentifier(projectId, identifier);
             log.info("User successfully removed from project - identifier: {}, projectId: {}", 
                     identifier, projectId);
@@ -288,99 +243,44 @@ public class ProjectAccessServiceImpl implements ProjectAccessService {
 
     @Override
     public List<ProjectAccessDTO> getUsersWithAccessToProject(String projectId) {
-        String currentUserId = securityUtils.getCurrentUserId();
+        String currentUserId = SecurityUtils.getCurrentUserId();
         log.info("Getting users with access to project - projectId: {}, by userId: {}", 
                 projectId, currentUserId);
-        
         try {
-            // Kiểm tra dự án tồn tại
-            Project project = projectRepository.findById(projectId)
-                    .orElseThrow(() -> {
-                        log.error("Project not found - projectId: {}", projectId);
-                        return BaseException.of(ErrorCode.PROJECT_NOT_FOUND);
-                    });
-            
-            // Kiểm tra người dùng hiện tại có quyền xem
+            if(!projectRepository.existsByProjectId(projectId)){
+                log.error(ErrorCode.PROJECT_NOT_FOUND.name());
+                throw  BaseException.of(ErrorCode.PROJECT_NOT_FOUND);
+            }
+            // Check if the current user has access to the project
             Integer permission = checkUserAccess(projectId, currentUserId);
-            if (permission == null) {
+            if (DataUtils.isNull(permission)) {
                 log.error("Access denied - user: {} does not have permission to view project: {}", 
                         currentUserId, projectId);
                 throw BaseException.of(ErrorCode.PROJECT_ACCESS_DENIED, HttpStatus.FORBIDDEN);
             }
             
-            // Lấy danh sách người dùng có quyền truy cập
+            // Get the list of users with access to the project
             List<ProjectAccess> accessList = projectAccessRepository.findByProjectId(projectId);
             List<ProjectAccessDTO> result = new ArrayList<>();
             
             log.info("Found {} users with access to project: {}", accessList.size(), projectId);
-            
             for (ProjectAccess access : accessList) {
-                // Trước tiên thử tìm theo socialId
-                Users user = userRepository.findBySocialId(access.getIdentifier()).orElse(null);
-                
-                // Nếu không tìm thấy, thử tìm theo userId
-                if (user == null) {
-                    log.info("User not found by socialId: {}, trying to find by userId", access.getIdentifier());
-                    user = userRepository.findById(access.getIdentifier()).orElse(null);
-                }
-                
-                if (user != null) {
-                    log.info("Found user for access - identifier: {}, email: {}, fullName: {}, avatarUrl: {}", 
-                            access.getIdentifier(), user.getEmail(), user.getFullName(), user.getAvatarUrl());
-                } else {
-                    log.warn("User not found for identifier: {} in project: {}", 
-                            access.getIdentifier(), projectId);
-                }
-                
+                Users user = getAndCheckUserById(access.getIdentifier());
                 result.add(projectAccessMapper.toDTOWithUser(access, user));
             }
             
-            // Kiểm tra kết quả cuối cùng
+            // Check if any users were found
             log.info("Returning {} project access DTOs", result.size());
             for (int i = 0; i < Math.min(result.size(), 5); i++) { // Log tối đa 5 kết quả đầu tiên
                 ProjectAccessDTO dto = result.get(i);
                 log.info("Access DTO {} - id: {}, identifier: {}, userEmail: {}, userName: {}, avatarUrl: {}", 
                         i, dto.getId(), dto.getIdentifier(), dto.getUserEmail(), dto.getUserName(), dto.getAvatarUrl());
             }
-            
             return result;
         } catch (BaseException e) {
             throw e;
         } catch (Exception e) {
             log.error("Unexpected error getting users with access to project", e);
-            throw BaseException.of(ErrorCode.INTERNAL_SERVER_ERROR, HttpStatus.INTERNAL_SERVER_ERROR);
-        }
-    }
-    
-    /**
-     * Phương thức này tự động thêm owner vào danh sách access khi tạo project
-     */
-    @Transactional
-    public void addOwnerToProject(String projectId, String ownerId) {
-        log.info("Adding owner to project access - projectId: {}, ownerId: {}", projectId, ownerId);
-        
-        try {
-            // Tìm user thông tin owner
-            Users owner = userRepository.findById(ownerId)
-                    .orElseThrow(() -> {
-                        log.error("Owner not found - ownerId: {}", ownerId);
-                        return BaseException.of(ErrorCode.USER_NOT_FOUND);
-                    });
-            
-            // Tạo access record cho owner với quyền edit (2)
-            ProjectAccess ownerAccess = new ProjectAccess();
-            ownerAccess.setProjectId(projectId);
-            ownerAccess.setIdentifier(owner.getSocialId());
-            ownerAccess.setPermission(2); // Edit permission
-            ownerAccess.setOwnerId(ownerId);
-            
-            projectAccessRepository.save(ownerAccess);
-            log.info("Owner successfully added to project access - socialId: {}, projectId: {}", 
-                    owner.getSocialId(), projectId);
-        } catch (BaseException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("Unexpected error adding owner to project", e);
             throw BaseException.of(ErrorCode.INTERNAL_SERVER_ERROR, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
@@ -390,50 +290,60 @@ public class ProjectAccessServiceImpl implements ProjectAccessService {
         log.info("Checking user permission level - projectId: {}, userId: {}", projectId, userId);
         
         try {
-            // Kiểm tra dự án tồn tại
-            Project project = projectRepository.findById(projectId)
-                    .orElseThrow(() -> {
-                        log.error("Project not found - projectId: {}", projectId);
-                        return BaseException.of(ErrorCode.PROJECT_NOT_FOUND);
-                    });
+            Project project =getAndCheckProjectById(projectId);
+            Users user = getAndCheckUserById(userId);
             
-            // Kiểm tra người dùng
-            Users user = userRepository.findById(userId)
-                    .orElseThrow(() -> {
-                        log.error("User not found - userId: {}", userId);
-                        return BaseException.of(ErrorCode.USER_NOT_FOUND);
-                    });
-            
-            // Nếu là chủ sở hữu, có quyền owner (1)
-            if (project.getOwnerId().equals(userId)) {
+            // If the user is the owner of the project, return owner permission level
+            if (Objects.equals(project.getOwnerId(), userId)) {
                 log.info("User is project owner - permission level: 1 (Owner)");
-                return 1; // Owner permission
+                return Constants.Permission.OWNER;
             }
             
-            // Kiểm tra quyền trong bảng access
+            // Check if the user has explicit permission in the project access table
             Integer permission = projectAccessRepository.findByProjectIdAndIdentifier(projectId, user.getUserId())
                     .map(ProjectAccess::getPermission)
                     .orElse(null);
             
-            // Nếu có quyền trong bảng access
-            if (permission != null) {
-                // Chuyển đổi permission từ cũ sang mới
-                // Cũ: 1 = View, 2 = Edit
-                // Mới: 2 = View, 3 = Edit
-                int permissionLevel = permission == 1 ? 2 : 3; // 1->2 (View), 2->3 (Edit)
+            // Check if the user has explicit permission
+            if (DataUtils.notNull(permission)) {
                 log.info("User has explicit permission level: {} for project: {}", 
-                        permissionLevel == 2 ? "View" : "Edit", projectId);
-                return permissionLevel;
+                        Objects.equals(permission, Constants.Permission.VIEWER) ? "View" : "Edit", projectId);
+                return permission;
             }
             
-            // Không có quyền truy cập
+            // Not accessed explicitly, check if the project is public
             log.info("User has no access to project: {} - permission level: 4 (Denied)", projectId);
-            return 4; // Denied
+            return Constants.Permission.DEN;
         } catch (BaseException e) {
             throw e;
         } catch (Exception e) {
             log.error("Unexpected error checking user permission level", e);
             throw BaseException.of(ErrorCode.INTERNAL_SERVER_ERROR, HttpStatus.INTERNAL_SERVER_ERROR);
         }
+    }
+    private Project getAndCheckProjectById(String projectId) {
+        return projectRepository.findById(projectId)
+                .orElseThrow(() -> {
+                    log.error(ErrorCode.PROJECT_NOT_FOUND.name());
+                    return BaseException.of(ErrorCode.PROJECT_NOT_FOUND);
+                });
+    }
+    private Users getAndCheckUserById(String userId){
+        Users users = userRepository.findById(userId)
+                .orElseThrow(() -> {
+                    log.error(ErrorCode.USER_NOT_FOUND.name());
+                    return BaseException.of(ErrorCode.USER_NOT_FOUND);
+                });
+        log.info("Found user: {} with userId: {}", userId, userId);
+        return users;
+    }
+    private Users getAndCheckUserByEmail(String email) {
+        Users user = userRepository.findByEmail(email)
+                .orElseThrow(() -> {
+                    log.error(ErrorCode.USER_NOT_FOUND.name());
+                    return BaseException.of(ErrorCode.USER_NOT_FOUND);
+                });
+        log.info("Found user: {} with email: {}", user.getUserId(), email);
+        return user;
     }
 } 

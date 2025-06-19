@@ -131,4 +131,10 @@ public final class Constants {
         public static final int EDITOR = 3;
         public static final int DEN = 4;
     }
+
+    public static final class Visibility {
+        public static final int PUBLIC = 1;
+        public static final int PRIVATE = 2;
+        public static final int PROTECTED = 3;
+    }
 } 

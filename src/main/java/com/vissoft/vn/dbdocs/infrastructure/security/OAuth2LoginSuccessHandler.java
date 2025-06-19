@@ -28,12 +28,17 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
     private final SocialLoginService socialLoginService;
     private final JwtConfig jwtConfig;
     private final ObjectMapper objectMapper;
-    
+
+
     @Value("${cors.allowed-origins:http://localhost:4200,http://localhost:3000}")
     private String allowedOrigins;
 
+    @Value("${domain.frontend.url}")
+    private String frontendDomainUrl;
+
     private static final String GOOGLE_PROVIDER = "google";
     private static final String GITHUB_PROVIDER = "github";
+    private static final String TEXT_EMAIL = "email";
 
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response,
@@ -46,14 +51,14 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
         
         // Đối với GitHub, nếu không có email, sử dụng username làm email
         String email;
-        if (GITHUB_PROVIDER.equals(provider) && (attributes.get("email") == null || ((String)attributes.get("email")).isEmpty())) {
+        if (GITHUB_PROVIDER.equals(provider) && (attributes.get(TEXT_EMAIL) == null || ((String)attributes.get(TEXT_EMAIL)).isEmpty())) {
             email = (String) attributes.get("login");
             log.info("GitHub login without email, using login name as email: {}", email);
         } else {
-            email = (String) attributes.get("email");
+            email = (String) attributes.get(TEXT_EMAIL);
         }
         
-        String name = determineName(attributes, provider);
+        String name = determineName(attributes);
         String pictureUrl = determinePictureUrl(attributes, provider);
 
         log.info("OAuth2 login success - provider: {}, socialId: {}, email/username: {}, name: {}", 
@@ -152,7 +157,7 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
         }
         
         // Fallback cuối cùng
-        return "http://localhost:4200";
+        return frontendDomainUrl;
     }
 
     private String determineProvider(Map<String, Object> attributes) {
@@ -170,13 +175,8 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
                 : String.valueOf(attributes.get("id"));
     }
 
-    private String determineName(Map<String, Object> attributes, String provider) {
-        if (GOOGLE_PROVIDER.equals(provider)) {
+    private String determineName(Map<String, Object> attributes) {
             return (String) attributes.get("name");
-        } else {
-            // GitHub trả về login là username và name là fullName
-            return (String) attributes.get("name");
-        }
     }
 
     private String determinePictureUrl(Map<String, Object> attributes, String provider) {

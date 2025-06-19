@@ -32,5 +32,7 @@ public enum ErrorCode {
     
     // Version errors
     VERSION_NOT_FOUND,
-    INVALID_VERSION
+    INVALID_VERSION,
+
+    ERROR_PARSING_DBML,
 } 

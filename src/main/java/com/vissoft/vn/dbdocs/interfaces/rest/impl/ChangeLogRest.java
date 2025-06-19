@@ -4,12 +4,10 @@ import java.util.List;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
-
 import com.vissoft.vn.dbdocs.application.dto.ChangeLogCreateRequest;
 import com.vissoft.vn.dbdocs.application.dto.ChangeLogDTO;
 import com.vissoft.vn.dbdocs.domain.service.ChangeLogService;
 import com.vissoft.vn.dbdocs.interfaces.rest.ChangeLogOperator;
-
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -43,11 +41,6 @@ public class ChangeLogRest implements ChangeLogOperator {
         return ResponseEntity.ok(changelogs);
     }
 
-//    @Override
-//    public ResponseEntity<List<ChangeLogDTO>> getChangeLogsByVersionId(String versionId) {
-//        return ResponseEntity.ok(changeLogService.getChangeLogsByVersionId(versionId));
-//    }
-
     @Override
     public ResponseEntity<ChangeLogDTO> getChangeLogById(String changeLogId) {
         return ResponseEntity.ok(changeLogService.getChangeLogById(changeLogId));
@@ -57,12 +50,10 @@ public class ChangeLogRest implements ChangeLogOperator {
     public ResponseEntity<ChangeLogDTO> getLatestChangeLogByProjectId(String projectId) {
         log.info("REST request to get latest changelog for project: {}", projectId);
         ChangeLogDTO latestChangeLog = changeLogService.getLatestChangeLogByProjectId(projectId);
-        
         if (latestChangeLog == null) {
             log.info("No changelog found for project: {}, returning 204 No Content", projectId);
             return ResponseEntity.noContent().build();
         }
-        
         log.info("Latest changelog found - ID: {}, creatorName: {}, creatorAvatarUrl: {}", 
             latestChangeLog.getChangeLogId(), latestChangeLog.getCreatorName(), latestChangeLog.getCreatorAvatarUrl());
         

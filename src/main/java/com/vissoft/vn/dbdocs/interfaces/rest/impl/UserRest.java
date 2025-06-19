@@ -27,7 +27,7 @@ public class UserRest implements UserOperator {
     }
     
     @Override
-    public ResponseEntity<UserDTO> getUserById(@PathVariable String userId) {
+    public ResponseEntity<UserDTO> getUserById(String userId) {
         log.info("REST request to get user information by ID: {}", userId);
         return ResponseEntity.ok(userService.getUserById(userId));
     }

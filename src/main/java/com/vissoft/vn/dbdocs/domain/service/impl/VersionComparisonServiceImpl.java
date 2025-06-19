@@ -1,7 +1,6 @@
 package com.vissoft.vn.dbdocs.domain.service.impl;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -11,20 +10,16 @@ import com.vissoft.vn.dbdocs.domain.entity.Version;
 import com.vissoft.vn.dbdocs.domain.exception.CustomException;
 import com.vissoft.vn.dbdocs.domain.model.DbmlParser;
 import com.vissoft.vn.dbdocs.domain.model.dbml.DbmlModel;
-import com.vissoft.vn.dbdocs.domain.model.dbml.TableModel;
 import com.vissoft.vn.dbdocs.domain.repository.ChangeLogRepository;
 import com.vissoft.vn.dbdocs.domain.repository.VersionRepository;
 import com.vissoft.vn.dbdocs.domain.service.VersionComparisonService;
+import com.vissoft.vn.dbdocs.infrastructure.util.DataUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.javers.core.Javers;
-import org.javers.core.JaversBuilder;
 import org.javers.core.diff.Diff;
 import org.javers.core.diff.Change;
-import org.javers.core.diff.changetype.NewObject;
-import org.javers.core.diff.changetype.ObjectRemoved;
 import org.javers.core.diff.changetype.ValueChange;
-import org.javers.core.diff.changetype.container.ListChange;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -32,7 +27,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -47,39 +41,37 @@ public class VersionComparisonServiceImpl implements VersionComparisonService {
     public VersionComparisonDTO compareVersions(String projectId, Integer fromVersion, Integer toVersion) {
         log.info("Comparing versions {} and {} for project {}", fromVersion, toVersion, projectId);
         
-        // Kiểm tra xem fromVersion có nhỏ hơn toVersion không
-        if (toVersion != null && fromVersion >= toVersion) {
+        // Check fromVersion and toVersion validity
+        if (DataUtils.notNull(toVersion) && fromVersion >= toVersion) {
             throw new CustomException("From version must be less than to version", HttpStatus.BAD_REQUEST);
         }
         
-        // Tìm phiên bản từ repository
+        // Find the Version entities for fromVersion and toVersion
         Optional<Version> fromVersionEntity = versionRepository.findByProjectIdAndCodeVersion(projectId, fromVersion);
-        
         Optional<Version> toVersionEntity;
-        if (toVersion != null) {
-            // Nếu toVersion được chỉ định, tìm phiên bản đó
+        if (DataUtils.notNull(toVersion)) {
+            // If toVersion is specified, find the corresponding Version entity
             toVersionEntity = versionRepository.findByProjectIdAndCodeVersion(projectId, toVersion);
         } else {
-            // Nếu toVersion là null, sử dụng changelog mới nhất
+            // If toVersion is null, use the latest changelog for comparison
             log.info("toVersion is null, using the latest changelog for comparison");
-            toVersionEntity = Optional.empty(); // Không cần tìm Version entity, vì sẽ sử dụng changelog mới nhất
+            toVersionEntity = Optional.empty(); // Not needed for the latest changelog
         }
-        
-        if (fromVersionEntity.isEmpty() || (toVersion != null && toVersionEntity.isEmpty())) {
+        if (fromVersionEntity.isEmpty() || (DataUtils.notNull(toVersion) && toVersionEntity.isEmpty())) {
             throw new CustomException("One or both versions not found", HttpStatus.NOT_FOUND);
         }
         
-        // Lấy changelog tương ứng
+        // Get the ChangeLog for fromVersion
         String fromChangeLogId = fromVersionEntity.get().getChangeLogId();
         Optional<ChangeLog> fromChangeLog = changeLogRepository.findById(fromChangeLogId);
         
         Optional<ChangeLog> toChangeLog;
-        if (toVersion != null) {
-            // Nếu toVersion được chỉ định, lấy changelog tương ứng
+        if (DataUtils.notNull(toVersion)) {
+            // If toVersion is specified, get the ChangeLog for that version
             String toChangeLogId = toVersionEntity.get().getChangeLogId();
             toChangeLog = changeLogRepository.findById(toChangeLogId);
         } else {
-            // Nếu toVersion là null, lấy changelog mới nhất của project
+            // If toVersion is null, get the latest ChangeLog for the project
             toChangeLog = changeLogRepository.findLatestChangeLogByProjectId(projectId);
         }
         
@@ -87,30 +79,29 @@ public class VersionComparisonServiceImpl implements VersionComparisonService {
             throw new CustomException("One or both changelogs not found", HttpStatus.NOT_FOUND);
         }
         
-        // Lấy nội dung DBML
+        // Get the DBML content from the ChangeLogs
         String fromDbml = fromChangeLog.get().getContent();
         String toDbml = toChangeLog.get().getContent();
         
-        // Parse DBML thành đối tượng DbmlModel
+        // Parse the DBML content to create DbmlModel objects
         DbmlParser parser = new DbmlParser();
         
         try {
             DbmlModel beforeModel = parser.parse(fromDbml);
             DbmlModel currentModel = parser.parse(toDbml);
             
-            // Xử lý so sánh và trả về kết quả
+            // Handle case where no tables exist in either model
             Map<String, Object> diffChanges = compareModels(beforeModel, currentModel);
             String diffJson = objectMapper.writeValueAsString(diffChanges);
             
-            // Xác định số phiên bản toVersion
+            // If toVersion is null, we assume the next version is fromVersion + 1
             Integer actualToVersion = toVersion;
-            if (toVersion == null) {
-                // Nếu toVersion là null, sử dụng số phiên bản dự kiến (fromVersion + 1)
+            if (DataUtils.isNull(toVersion)) {
                 actualToVersion = fromVersion + 1;
             }
             
             // Save diff to the toVersion entity if it exists
-            if (toVersion != null) {
+            if (DataUtils.notNull(toVersion)) {
                 toVersionEntity.get().setDiffChange(diffJson);
                 versionRepository.save(toVersionEntity.get());
             }
@@ -128,48 +119,44 @@ public class VersionComparisonServiceImpl implements VersionComparisonService {
         }
     }
     
-    private Map<String, Object> compareModels(DbmlModel beforeModel, DbmlModel currentModel) throws JsonProcessingException {
+    private Map compareModels(DbmlModel beforeModel, DbmlModel currentModel) {
         log.debug("Comparing database models using Javers core");
         
         try {
-            // Sử dụng Javers chỉ để phân tích sự khác biệt, không lưu vào DB
+            // Use Javers to compare the two models
             Diff diff = javers.compare(beforeModel, currentModel);
             
-            // Tạo cấu trúc JSON phù hợp từ kết quả phân tích của Javers
+            // Create a root JSON object to hold the comparison results
             ObjectNode rootNode = objectMapper.createObjectNode();
             
-            // Thông tin tổng quan
+            // Include basic metadata about the comparison
             rootNode.put("totalChanges", diff.getChanges().size());
             
-            // Phân loại các thay đổi
+            // Change statistics
             List<Change> newObjects = diff.getChanges().stream()
-                    .filter(change -> change instanceof NewObject)
-                    .collect(Collectors.toList());
+                    .filter(ValueChange.class::isInstance)
+                    .toList();
             
             List<Change> removedObjects = diff.getChanges().stream()
-                    .filter(change -> change instanceof ObjectRemoved)
-                    .collect(Collectors.toList());
+                    .filter(ValueChange.class::isInstance)
+                    .toList();
             
             List<Change> valueChanges = diff.getChanges().stream()
-                    .filter(change -> change instanceof ValueChange)
-                    .collect(Collectors.toList());
+                    .filter(ValueChange.class::isInstance)
+                    .toList();
             
             List<Change> listChanges = diff.getChanges().stream()
-                    .filter(change -> change instanceof ListChange)
-                    .collect(Collectors.toList());
+                    .filter(ValueChange.class::isInstance)
+                    .toList();
             
             rootNode.put("newObjectsCount", newObjects.size());
             rootNode.put("removedObjectsCount", removedObjects.size());
             rootNode.put("valueChangesCount", valueChanges.size());
             rootNode.put("listChangesCount", listChanges.size());
-            
-            // Thêm chi tiết về các bảng
-            ObjectNode tablesNode = objectMapper.createObjectNode();
-            
-            // Phân loại thay đổi theo bảng
+
             Map<String, ArrayNode> tableChanges = new HashMap<>();
             
-            // Xử lý các bảng mới
+            // Handle the new tables added
             ArrayNode addedTables = objectMapper.createArrayNode();
             for (Change change : newObjects) {
                 if (change.getAffectedGlobalId().getTypeName().contains("TableModel")) {
@@ -187,35 +174,34 @@ public class VersionComparisonServiceImpl implements VersionComparisonService {
                 }
             }
             
-            // Phân tích các thay đổi về giá trị
+            // Analyze value changes and categorize them by table
             for (Change change : valueChanges) {
-                if (change instanceof ValueChange) {
-                    ValueChange valueChange = (ValueChange) change;
+                if (change instanceof ValueChange valueChange) {
                     String tableName = extractTableName(valueChange.getAffectedGlobalId().toString());
                     
-                    // Thêm thay đổi vào bảng tương ứng
+                    // Add the change to the corresponding table's change array
                     ArrayNode changesArray = tableChanges.computeIfAbsent(tableName, 
                             k -> objectMapper.createArrayNode());
                     
                     ObjectNode changeNode = objectMapper.createObjectNode();
                     changeNode.put("property", valueChange.getPropertyName());
-                    changeNode.put("oldValue", valueChange.getLeft() != null ? valueChange.getLeft().toString() : null);
-                    changeNode.put("newValue", valueChange.getRight() != null ? valueChange.getRight().toString() : null);
+                    changeNode.put("oldValue", DataUtils.notNull(valueChange.getLeft()) ? valueChange.getLeft().toString() : null);
+                    changeNode.put("newValue", DataUtils.notNull(valueChange.getRight()) ? valueChange.getRight().toString() : null);
                     
                     changesArray.add(changeNode);
                 }
             }
             
-            // Thêm tất cả thay đổi vào JSON
+            // Add the added and removed tables to the root node
             rootNode.set("addedTables", addedTables);
             rootNode.set("removedTables", removedTables);
             
-            // Thêm các thay đổi theo bảng
+            // Add the table changes to the root node
             ObjectNode tableDetailsNode = objectMapper.createObjectNode();
             tableChanges.forEach(tableDetailsNode::set);
             rootNode.set("tableChanges", tableDetailsNode);
             
-            // Chuyển đổi sang Map để trả về
+            // Change the structure of the diff output to a Map
             return objectMapper.convertValue(rootNode, Map.class);
             
         } catch (Exception e) {
@@ -233,10 +219,9 @@ public class VersionComparisonServiceImpl implements VersionComparisonService {
     }
     
     /**
-     * Trích xuất tên bảng từ ID của Javers
+     * Extracts the table name from a global ID.
      */
     private String extractTableName(String globalId) {
-        // Đơn giản hóa: chỉ lấy phần cuối của ID
         String[] parts = globalId.split("/");
         return parts.length > 0 ? parts[parts.length - 1].replace("'", "") : "unknown";
     }

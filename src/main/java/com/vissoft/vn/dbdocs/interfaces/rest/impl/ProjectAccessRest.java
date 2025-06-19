@@ -24,7 +24,6 @@ import lombok.extern.slf4j.Slf4j;
 public class ProjectAccessRest implements ProjectAccessOperator {
     
     private final ProjectAccessService projectAccessService;
-    private final SecurityUtils securityUtils;
     
     @Override
     public ResponseEntity<ProjectAccessDTO> addUserToProject(ProjectAccessRequest request) {
@@ -39,8 +38,7 @@ public class ProjectAccessRest implements ProjectAccessOperator {
     
     @Override
     public ResponseEntity<Map<String, Integer>> checkUserAccess(String projectId) {
-        String userId = securityUtils.getCurrentUserId();
-        Integer permission = projectAccessService.checkUserAccess(projectId, userId);
+        Integer permission = projectAccessService.checkUserAccess(projectId, SecurityUtils.getCurrentUserId());
         Map<String, Integer> result = new HashMap<>();
         result.put("permission", permission);
         return ResponseEntity.ok(result);
@@ -49,9 +47,8 @@ public class ProjectAccessRest implements ProjectAccessOperator {
     @Override
     public ResponseEntity<Map<String, Integer>> checkUserPermissionLevel(String projectId) {
         log.info("REST request to check user permission level for project: {}", projectId);
-        
-        String userId = securityUtils.getCurrentUserId();
-        Integer permissionLevel = projectAccessService.checkUserPermissionLevel(projectId, userId);
+
+        Integer permissionLevel = projectAccessService.checkUserPermissionLevel(projectId, SecurityUtils.getCurrentUserId());
         
         Map<String, Integer> result = new HashMap<>();
         result.put("permissionLevel", permissionLevel);
@@ -65,8 +62,8 @@ public class ProjectAccessRest implements ProjectAccessOperator {
         
         result.put("code", permissionLevel);
         
-        log.info("User {} has permission level {} ({}) for project {}", 
-                userId, permissionLevel, descriptions.get(permissionLevel), projectId);
+        log.info("User {} has permission level {} ({}) for project {}",
+                SecurityUtils.getCurrentUserId(), permissionLevel, descriptions.get(permissionLevel), projectId);
         
         return ResponseEntity.ok(result);
     }
