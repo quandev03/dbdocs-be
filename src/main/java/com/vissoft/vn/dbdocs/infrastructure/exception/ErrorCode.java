@@ -35,4 +35,6 @@ public enum ErrorCode {
     INVALID_VERSION,
 
     ERROR_PARSING_DBML,
+    KEYWORD_NOT_ALLOWED,
+    PARSE_FIELD_ERROR
 } 

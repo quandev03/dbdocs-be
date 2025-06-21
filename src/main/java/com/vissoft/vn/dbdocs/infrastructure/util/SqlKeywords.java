@@ -1,5 +1,7 @@
 package com.vissoft.vn.dbdocs.infrastructure.util;
 
+import com.nimbusds.jwt.util.DateUtils;
+
 /**
  * Lớp tiện ích chứa các hằng số từ khóa SQL, được nhóm theo chức năng.
  * Lớp này được thiết kế để không thể khởi tạo.
@@ -36,6 +38,7 @@ public final class SqlKeywords {
 
         public static final String TRUNCATE_TABLE = "TRUNCATE TABLE";
         public static final String RENAME_TABLE = "RENAME TABLE"; // Cú pháp có thể khác nhau
+        public static final String ADD_COLUMN = "ADD COLUMN"; // Cú pháp có thể khác nhau
     }
 
     /**
@@ -147,6 +150,18 @@ public final class SqlKeywords {
      */
     public static final class DataTypes {
         // String types
+        public static String varcharG(int length) {
+            if(DataUtils.isNull(length)){
+                return VARCHAR+"(255)";
+            }
+            return VARCHAR+"("+ length + ")";
+        }
+        public static String nVarcharG(int length) {
+            if(DataUtils.isNull(length)){
+                return NVARCHAR+"(255)";
+            }
+            return NVARCHAR+"("+ length + ")";
+        }
         public static final String VARCHAR = "VARCHAR";
         public static final String NVARCHAR = "NVARCHAR";
         public static final String CHAR = "CHAR";
@@ -180,5 +195,24 @@ public final class SqlKeywords {
     public static final class Ordering {
         public static final String ASC = "ASC";
         public static final String DESC = "DESC";
+    }
+
+    public static final class KeySqlConstant {
+        public static final String PK_KEY = "PK";
+        public static final String NOT_NULL = "NOT NULL";
+    }
+
+    public static final class ModifiersType {
+        public static final String ADD = "ADD";
+        public static final String MODIFY = "MODIFY";
+        public static final String DROP = "DROP";
+        public static final String RENAME = "RENAME";
+        public static final String CHANGE = "CHANGE";
+        public static final String ENABLE = "ENABLE";
+        public static final String DISABLE = "DISABLE";
+        public static final String COMMENT = "COMMENT";
+        public static final String USE = "USE";
+        public static final String ALTER = "ALTER";
+        public static final String REMOVE = "REMOVED";
     }
 }

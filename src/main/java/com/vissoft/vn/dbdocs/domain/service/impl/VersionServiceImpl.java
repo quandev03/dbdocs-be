@@ -3,6 +3,7 @@ package com.vissoft.vn.dbdocs.domain.service.impl;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import com.vissoft.vn.dbdocs.domain.service.*;
 import com.vissoft.vn.dbdocs.infrastructure.util.DataUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -26,10 +27,6 @@ import com.vissoft.vn.dbdocs.domain.repository.ChangeLogRepository;
 import com.vissoft.vn.dbdocs.domain.repository.ProjectRepository;
 import com.vissoft.vn.dbdocs.domain.repository.UserRepository;
 import com.vissoft.vn.dbdocs.domain.repository.VersionRepository;
-import com.vissoft.vn.dbdocs.domain.service.ChangeLogService;
-import com.vissoft.vn.dbdocs.domain.service.ProjectAccessService;
-import com.vissoft.vn.dbdocs.domain.service.VersionComparisonService;
-import com.vissoft.vn.dbdocs.domain.service.VersionService;
 import com.vissoft.vn.dbdocs.infrastructure.constant.Constants;
 import com.vissoft.vn.dbdocs.infrastructure.exception.BaseException;
 import com.vissoft.vn.dbdocs.infrastructure.exception.ErrorCode;
@@ -60,6 +57,7 @@ public class VersionServiceImpl implements VersionService {
     private final ObjectMapper objectMapper;
     private final DdlScriptResponseMapper ddlScriptResponseMapper;
     private final ProjectAccessService projectAccessService;
+    private final GeneraScriptDDLService generaScriptDDLService;
 
     @Override
     @Transactional
@@ -369,29 +367,8 @@ public class VersionServiceImpl implements VersionService {
                     .append(Constants.SQL.Formatting.NEW_LINE).append(Constants.SQL.Formatting.COMMENT_PREFIX).append("To version: ").append(request.getToVersion())
                     .append(Constants.SQL.Formatting.NEW_LINE).append(Constants.SQL.Formatting.COMMENT_PREFIX).append("Dialect: ").append(dialectName)
                     .append(Constants.SQL.Formatting.NEW_LINE).append(Constants.SQL.Formatting.NEW_LINE);
-            
-            // Xử lý theo dialect
-            switch (request.getDialect()) {
-                case Constants.SQL.Dialect.MYSQL:
-                    generateMySqlDdl(comparisonDTO, ddlScript);
-                    break;
-                case Constants.SQL.Dialect.MARIADB:
-                    generateMySqlDdl(comparisonDTO, ddlScript);
-                    break;
-                case Constants.SQL.Dialect.POSTGRESQL:
-                    generatePostgreSqlDdl(comparisonDTO, ddlScript);
-                    break;
-                case Constants.SQL.Dialect.ORACLE:
-                    generateOracleDdl(comparisonDTO, ddlScript);
-                    break;
-                case Constants.SQL.Dialect.SQL_SERVER:
-                    generateSqlServerDdl(comparisonDTO, ddlScript);
-                    break;
-                default:
-                    // Mặc định sử dụng MySQL
-                    generateMySqlDdl(comparisonDTO, ddlScript);
-                    break;
-            }
+
+            ddlScript.append(generaScriptDDLService.generateDDL(comparisonDTO, request.getDialect()));
             
             logCreateDDLSuccess(ddlScript.toString());
             
@@ -739,149 +716,10 @@ public class VersionServiceImpl implements VersionService {
     }
 
     private void generateOracleDdl(VersionComparisonDTO comparisonDTO, StringBuilder ddlScript) {
-        log.debug("Generating Oracle DDL from diffChanges JSON");
-        
-        try {
-            // Parse the diffChanges JSON string into a JsonNode
-            String diffChangesStr = comparisonDTO.getDiffChanges();
-            if (diffChangesStr == null || diffChangesStr.isEmpty()) {
-                log.warn("No diff changes found to generate DDL script");
-                return;
-            }
-            
-            // Parse the JSON
-            JsonNode diffChanges = objectMapper.readTree(diffChangesStr);
-            logJson("Parsed diffChanges", diffChanges);
-            
-            // Add comment for table changes section
-            ddlScript.append(Constants.SQL.Formatting.COMMENT_PREFIX).append("Table changes").append(Constants.SQL.Formatting.NEW_LINE);
-            
-            boolean changesMade = false;
-            
-            // Process added tables
-            JsonNode addedTables = diffChanges.path("addedTables");
-            if (!addedTables.isMissingNode() && addedTables.isArray() && addedTables.size() > 0) {
-                changesMade = true;
-                for (JsonNode table : addedTables) {
-                    String tableName = table.asText();
-                    log.debug("Processing added table: {}", tableName);
-                    
-                    // For the posts table, explicitly create it
-                    if ("posts".equals(tableName)) {
-                        ddlScript.append(Constants.SQL.Keywords.CREATE_TABLE).append(" ")
-                                .append(Constants.SQL.Identifiers.POSTGRESQL_ORACLE_IDENTIFIER_START).append(tableName)
-                                .append(Constants.SQL.Identifiers.POSTGRESQL_ORACLE_IDENTIFIER_END)
-                                .append(" (").append(Constants.SQL.Formatting.NEW_LINE);
-                        
-                        // Add the columns based on the DBML
-                        ddlScript.append("  \"ID\" NUMBER PRIMARY KEY,").append(Constants.SQL.Formatting.NEW_LINE);
-                        ddlScript.append("  \"USER_ID\" NUMBER,").append(Constants.SQL.Formatting.NEW_LINE);
-                        ddlScript.append("  \"TITLE\" VARCHAR2(255),").append(Constants.SQL.Formatting.NEW_LINE);
-                        ddlScript.append("  \"CONTENT\" CLOB,").append(Constants.SQL.Formatting.NEW_LINE);
-                        ddlScript.append("  CONSTRAINT \"FK_POSTS_USERS\" FOREIGN KEY (\"USER_ID\") REFERENCES \"USERS\"(\"ID\")").append(Constants.SQL.Formatting.NEW_LINE);
-                        
-                        ddlScript.append(")").append(Constants.SQL.Formatting.SEMICOLON).append(Constants.SQL.Formatting.NEW_LINE).append(Constants.SQL.Formatting.NEW_LINE);
-                    }
-                }
-            } else {
-                log.debug("No added tables found in the diffChanges");
-            }
-            
-            // Process removed tables
-            JsonNode removedTables = diffChanges.path("removedTables");
-            if (!removedTables.isMissingNode() && removedTables.isArray() && removedTables.size() > 0) {
-                changesMade = true;
-                for (JsonNode table : removedTables) {
-                    String tableName = table.asText();
-                    log.debug("Processing removed table: {}", tableName);
-                    
-                    ddlScript.append(Constants.SQL.Keywords.DROP_TABLE).append(" ")
-                            .append(Constants.SQL.Identifiers.POSTGRESQL_ORACLE_IDENTIFIER_START).append(tableName)
-                            .append(Constants.SQL.Identifiers.POSTGRESQL_ORACLE_IDENTIFIER_END).append(";")
-                            .append(Constants.SQL.Formatting.NEW_LINE).append(Constants.SQL.Formatting.NEW_LINE);
-                }
-            } else {
-                log.debug("No removed tables found in the diffChanges");
-            }
-            
-            // Process table changes (column additions, removals, or modifications)
-            JsonNode tableChanges = diffChanges.path("tableChanges");
-            if (!tableChanges.isMissingNode() && tableChanges.isObject() && tableChanges.size() > 0) {
-                log.debug("Processing table changes: {}", tableChanges);
-                
-                // Map to store table name and column changes
-                Map<String, List<JsonNode>> tableColumnChanges = new HashMap<>();
-                
-                // First, collect all column changes by table
-                Iterator<Map.Entry<String, JsonNode>> tableEntries = tableChanges.fields();
-                while (tableEntries.hasNext()) {
-                    Map.Entry<String, JsonNode> entry = tableEntries.next();
-                    String tableIndex = entry.getKey();
-                    JsonNode columnChanges = entry.getValue();
-                    
-                    if (columnChanges.isArray()) {
-                        String tableName = "";
-                        
-                        // Try to find the table name from the column changes
-                        for (JsonNode change : columnChanges) {
-                            if (change.has("property") && change.get("property").asText().equals("name")) {
-                                if (change.has("oldValue") && !change.get("oldValue").isNull()) {
-                                    // This is likely a column name change or removal
-                                    if (change.has("newValue") && change.get("newValue").isNull()) {
-                                        // Column removal - need to get the table name
-                                        tableName = "users"; // For the specific case we're handling
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        
-                        if (tableName.isEmpty()) {
-                            // Default to "users" table for this specific case
-                            tableName = "users";
-                        }
-                        
-                        tableColumnChanges.computeIfAbsent(tableName, k -> new ArrayList<>()).addAll(toList(columnChanges));
-                    }
-                }
-                
-                // Now process each table and its column changes
-                for (Map.Entry<String, List<JsonNode>> entry : tableColumnChanges.entrySet()) {
-                    String tableName = entry.getKey();
-                    List<JsonNode> columnChanges = entry.getValue();
-                    
-                    // Process column changes
-                    for (JsonNode change : columnChanges) {
-                        if (change.has("property") && change.get("property").asText().equals("name")) {
-                            if (change.has("oldValue") && !change.get("oldValue").isNull() && 
-                                change.has("newValue") && change.get("newValue").isNull()) {
-                                // Column removal
-                                String columnName = change.get("oldValue").asText();
-                                log.debug("Dropping column {} from table {}", columnName, tableName);
-                                
-                                // Oracle syntax for dropping a column
-                                ddlScript.append(Constants.SQL.Keywords.ALTER_TABLE).append(" ")
-                                        .append(Constants.SQL.Identifiers.POSTGRESQL_ORACLE_IDENTIFIER_START).append(tableName)
-                                        .append(Constants.SQL.Identifiers.POSTGRESQL_ORACLE_IDENTIFIER_END).append(" ")
-                                        .append(Constants.SQL.Keywords.DROP_COLUMN).append(" ")
-                                        .append(Constants.SQL.Identifiers.POSTGRESQL_ORACLE_IDENTIFIER_START).append(columnName)
-                                        .append(Constants.SQL.Identifiers.POSTGRESQL_ORACLE_IDENTIFIER_END).append(";")
-                                        .append(Constants.SQL.Formatting.NEW_LINE);
-                                        
-                                changesMade = true;
-                            }
-                        }
-                    }
-                }
-            } else {
-                log.debug("No table changes found in the diffChanges");
-            }
-            
-            // If no changes were made to the script, add a comment
-            if (!changesMade) {
-                ddlScript.append(Constants.SQL.Formatting.COMMENT_PREFIX).append("No changes detected that require DDL statements").append(Constants.SQL.Formatting.NEW_LINE);
-            }
-            
+        log.info("Generating Oracle DDL from diffChanges JSON");
+        try{
+            String ddlGenerated = generaScriptDDLService.generateDDL(comparisonDTO, Constants.SQL.Dialect.ORACLE);
+            ddlScript.append(ddlGenerated);
         } catch (Exception e) {
             log.error("Error generating Oracle DDL script: {}", e.getMessage(), e);
             ddlScript.append(Constants.SQL.Formatting.COMMENT_PREFIX).append("Error generating DDL: ").append(e.getMessage())

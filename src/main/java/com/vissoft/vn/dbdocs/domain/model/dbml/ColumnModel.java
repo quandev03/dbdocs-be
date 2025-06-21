@@ -1,14 +1,12 @@
 package com.vissoft.vn.dbdocs.domain.model.dbml;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@EqualsAndHashCode
 public class ColumnModel {
     private String name;
     private String dataType;

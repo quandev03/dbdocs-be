@@ -33,7 +33,7 @@ public class VersionComparisonDTO {
         @Builder.Default
         private List<ColumnDiff> columnDiffs = new ArrayList<>();
     }
-    
+
     @Data
     @Builder
     @NoArgsConstructor
@@ -41,9 +41,16 @@ public class VersionComparisonDTO {
     public static class ColumnDiff {
         private String columnName;
         private DiffType diffType;
+
         private String beforeType;
         private String currentType;
-        private List<String> changedProperties;
+
+        private Object oldValue;
+        private Object newValue;
+
+        // --- THÊM LẠI TRƯỜNG NÀY ---
+        @Builder.Default // Để nó không bị null khi dùng builder
+        private List<String> changedProperties = new ArrayList<>();
     }
     
     public enum DiffType {

@@ -1,6 +1,8 @@
 package com.vissoft.vn.dbdocs.domain.service.impl;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -9,7 +11,9 @@ import com.vissoft.vn.dbdocs.domain.entity.ChangeLog;
 import com.vissoft.vn.dbdocs.domain.entity.Version;
 import com.vissoft.vn.dbdocs.domain.exception.CustomException;
 import com.vissoft.vn.dbdocs.domain.model.DbmlParser;
+import com.vissoft.vn.dbdocs.domain.model.dbml.ColumnModel;
 import com.vissoft.vn.dbdocs.domain.model.dbml.DbmlModel;
+import com.vissoft.vn.dbdocs.domain.model.dbml.TableModel;
 import com.vissoft.vn.dbdocs.domain.repository.ChangeLogRepository;
 import com.vissoft.vn.dbdocs.domain.repository.VersionRepository;
 import com.vissoft.vn.dbdocs.domain.service.VersionComparisonService;
@@ -17,16 +21,20 @@ import com.vissoft.vn.dbdocs.infrastructure.util.DataUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.javers.core.Javers;
-import org.javers.core.diff.Diff;
-import org.javers.core.diff.Change;
-import org.javers.core.diff.changetype.ValueChange;
+import org.javers.core.metamodel.object.GlobalId;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.io.IOException;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
+
+// Import cho các thay đổi của Map (quan trọng nhất cho lỗi này)
+import org.javers.core.diff.Change; // Lớp Change cơ sở
+
 
 @Service
 @RequiredArgsConstructor
@@ -92,7 +100,11 @@ public class VersionComparisonServiceImpl implements VersionComparisonService {
             
             // Handle case where no tables exist in either model
             Map<String, Object> diffChanges = compareModels(beforeModel, currentModel);
+            List<VersionComparisonDTO.TableDiff> tableDiffs = createTableDiffs(diffChanges, objectMapper);
             String diffJson = objectMapper.writeValueAsString(diffChanges);
+            log.info("Version comparison result: {}", diffJson);
+
+
             
             // If toVersion is null, we assume the next version is fromVersion + 1
             Integer actualToVersion = toVersion;
@@ -111,6 +123,7 @@ public class VersionComparisonServiceImpl implements VersionComparisonService {
                     .fromVersion(fromVersion)
                     .toVersion(actualToVersion)
                     .diffChanges(diffJson)
+                    .tableDiffs(tableDiffs)
                     .build();
         } catch (Exception e) {
             log.error("Error parsing DBML or comparing versions", e);
@@ -118,104 +131,164 @@ public class VersionComparisonServiceImpl implements VersionComparisonService {
                     HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
-    
-    private Map compareModels(DbmlModel beforeModel, DbmlModel currentModel) {
-        log.debug("Comparing database models using Javers core");
-        
-        try {
-            // Use Javers to compare the two models
-            Diff diff = javers.compare(beforeModel, currentModel);
-            
-            // Create a root JSON object to hold the comparison results
-            ObjectNode rootNode = objectMapper.createObjectNode();
-            
-            // Include basic metadata about the comparison
-            rootNode.put("totalChanges", diff.getChanges().size());
-            
-            // Change statistics
-            List<Change> newObjects = diff.getChanges().stream()
-                    .filter(ValueChange.class::isInstance)
-                    .toList();
-            
-            List<Change> removedObjects = diff.getChanges().stream()
-                    .filter(ValueChange.class::isInstance)
-                    .toList();
-            
-            List<Change> valueChanges = diff.getChanges().stream()
-                    .filter(ValueChange.class::isInstance)
-                    .toList();
-            
-            List<Change> listChanges = diff.getChanges().stream()
-                    .filter(ValueChange.class::isInstance)
-                    .toList();
-            
-            rootNode.put("newObjectsCount", newObjects.size());
-            rootNode.put("removedObjectsCount", removedObjects.size());
-            rootNode.put("valueChangesCount", valueChanges.size());
-            rootNode.put("listChangesCount", listChanges.size());
 
+    // Bạn không cần các hàm helper extract...FromGlobalId nữa với cách làm này.
+
+    private Map<String, Object> compareModels(DbmlModel beforeModel, DbmlModel currentModel) {
+        log.debug("Comparing models using direct, manual diffing logic for clarity.");
+        try {
+            // Tạo Map cho hai phiên bản
+            Map<String, TableModel> beforeTablesMap = beforeModel.getTables().stream()
+                    .collect(Collectors.toMap(TableModel::getName, table -> table, (t1, t2) -> t1));
+            Map<String, TableModel> currentTablesMap = currentModel.getTables().stream()
+                    .collect(Collectors.toMap(TableModel::getName, table -> table, (t1, t2) -> t1));
+
+            ObjectNode rootNode = objectMapper.createObjectNode();
             Map<String, ArrayNode> tableChanges = new HashMap<>();
-            
-            // Handle the new tables added
             ArrayNode addedTables = objectMapper.createArrayNode();
-            for (Change change : newObjects) {
-                if (change.getAffectedGlobalId().getTypeName().contains("TableModel")) {
-                    String tableName = extractTableName(change.getAffectedGlobalId().toString());
-                    addedTables.add(tableName);
-                }
-            }
-            
-            // Xử lý các bảng bị xóa
             ArrayNode removedTables = objectMapper.createArrayNode();
-            for (Change change : removedObjects) {
-                if (change.getAffectedGlobalId().getTypeName().contains("TableModel")) {
-                    String tableName = extractTableName(change.getAffectedGlobalId().toString());
-                    removedTables.add(tableName);
+
+            // --- Xử lý THÊM BẢNG ---
+            for (String currentTableName : currentTablesMap.keySet()) {
+                if (!beforeTablesMap.containsKey(currentTableName)) {
+                    // Lấy toàn bộ đối tượng TableModel của bảng mới
+                    TableModel addedTableObject = currentTablesMap.get(currentTableName);
+
+                    // Chuyển đổi đối tượng này thành dạng JSON và thêm vào mảng
+                    // Giờ đây "addedTables" sẽ là một mảng các đối tượng bảng, không phải mảng chuỗi
+                    addedTables.add(objectMapper.valueToTree(addedTableObject));
                 }
             }
-            
-            // Analyze value changes and categorize them by table
-            for (Change change : valueChanges) {
-                if (change instanceof ValueChange valueChange) {
-                    String tableName = extractTableName(valueChange.getAffectedGlobalId().toString());
-                    
-                    // Add the change to the corresponding table's change array
-                    ArrayNode changesArray = tableChanges.computeIfAbsent(tableName, 
-                            k -> objectMapper.createArrayNode());
-                    
-                    ObjectNode changeNode = objectMapper.createObjectNode();
-                    changeNode.put("property", valueChange.getPropertyName());
-                    changeNode.put("oldValue", DataUtils.notNull(valueChange.getLeft()) ? valueChange.getLeft().toString() : null);
-                    changeNode.put("newValue", DataUtils.notNull(valueChange.getRight()) ? valueChange.getRight().toString() : null);
-                    
-                    changesArray.add(changeNode);
+
+            // --- Xử lý XÓA BẢNG ---
+            for (String beforeTableName : beforeTablesMap.keySet()) {
+                if (!currentTablesMap.containsKey(beforeTableName)) {
+                    removedTables.add(beforeTableName);
                 }
             }
-            
-            // Add the added and removed tables to the root node
+
+            // --- Xử lý SỬA BẢNG ---
+            for (String tableName : currentTablesMap.keySet()) {
+                if (beforeTablesMap.containsKey(tableName)) {
+                    TableModel beforeTable = beforeTablesMap.get(tableName);
+                    TableModel currentTable = currentTablesMap.get(tableName);
+
+                    // Nếu hai phiên bản của bảng không bằng nhau (nhờ có .equals())
+                    if (!beforeTable.equals(currentTable)) {
+                        ArrayNode changesArray = tableChanges.computeIfAbsent(tableName, k -> objectMapper.createArrayNode());
+
+                        // So sánh thủ công danh sách cột
+                        Map<String, ColumnModel> beforeColumns = beforeTable.getColumns().stream()
+                                .collect(Collectors.toMap(ColumnModel::getName, col -> col));
+                        Map<String, ColumnModel> currentColumns = currentTable.getColumns().stream()
+                                .collect(Collectors.toMap(ColumnModel::getName, col -> col));
+
+                        // Tìm cột bị xóa
+                        beforeColumns.keySet().stream()
+                                .filter(colName -> !currentColumns.containsKey(colName))
+                                .forEach(removedColName -> {
+                                    ObjectNode changeNode = objectMapper.createObjectNode();
+                                    changeNode.put("property", "column");
+                                    changeNode.put("changeType", "REMOVED");
+                                    changeNode.set("value", objectMapper.valueToTree(beforeColumns.get(removedColName)));
+                                    changesArray.add(changeNode);
+                                });
+
+                        // Tìm cột được thêm hoặc sửa
+                        currentColumns.forEach((colName, currentCol) -> {
+                            if (!beforeColumns.containsKey(colName)) {
+                                // Cột mới
+                                ObjectNode changeNode = objectMapper.createObjectNode();
+                                changeNode.put("property", "column");
+                                changeNode.put("changeType", "ADDED");
+                                changeNode.set("value", objectMapper.valueToTree(currentCol));
+                                changesArray.add(changeNode);
+                            } else {
+                                ColumnModel beforeCol = beforeColumns.get(colName);
+                                // Nếu cột bị sửa đổi (nhờ có .equals() trên ColumnModel)
+                                if (!currentCol.equals(beforeCol)) {
+                                    ObjectNode changeNode = objectMapper.createObjectNode();
+                                    changeNode.put("property", "column");
+                                    changeNode.put("changeType", "MODIFIED");
+                                    changeNode.set("oldValue", objectMapper.valueToTree(beforeCol));
+                                    changeNode.set("newValue", objectMapper.valueToTree(currentCol));
+                                    changesArray.add(changeNode);
+                                }
+                            }
+                        });
+                    }
+                }
+            }
+
             rootNode.set("addedTables", addedTables);
             rootNode.set("removedTables", removedTables);
-            
-            // Add the table changes to the root node
             ObjectNode tableDetailsNode = objectMapper.createObjectNode();
             tableChanges.forEach(tableDetailsNode::set);
             rootNode.set("tableChanges", tableDetailsNode);
-            
-            // Change the structure of the diff output to a Map
+
             return objectMapper.convertValue(rootNode, Map.class);
-            
+
         } catch (Exception e) {
-            log.error("Error using Javers for comparison: {}", e.getMessage(), e);
-            
-            // Fallback nếu Javers gặp lỗi
-            Map<String, Object> fallback = new HashMap<>();
-            fallback.put("error", "Failed to compare models: " + e.getMessage());
-            fallback.put("tablesBeforeCount", beforeModel.getTables().size());
-            fallback.put("tablesAfterCount", currentModel.getTables().size());
-            fallback.put("tablesDiff", currentModel.getTables().size() - beforeModel.getTables().size());
-            
-            return fallback;
+            log.error("Error during manual comparison: {}", e.getMessage(), e);
+            return new HashMap<>();
         }
+    }
+
+    // Bạn sẽ cần các hàm helper mới để trích xuất thông tin từ GlobalId
+    /**
+     * Helper mới, sử dụng globalId.toString() để trích xuất tên bảng từ GlobalId.
+     * Nó lấy ra số index của bảng từ chuỗi ID, sau đó dùng index để tra cứu tên bảng
+     * trong model hiện tại (currentModel).
+     */
+    private String extractTableNameFromGlobalId(GlobalId globalId, DbmlModel currentModel) {
+        // SỬA LỖI: Dùng toString() thay vì getPath()
+        String fullIdString = globalId.toString();
+
+        // Regex để tìm chuỗi "tables/" theo sau bởi một hoặc nhiều chữ số (là table index)
+        Pattern pattern = Pattern.compile("tables/(\\d+)");
+        Matcher matcher = pattern.matcher(fullIdString);
+
+        if (matcher.find()) {
+            int tableIndex = Integer.parseInt(matcher.group(1));
+            if (tableIndex < currentModel.getTables().size()) {
+                return currentModel.getTables().get(tableIndex).getName();
+            }
+        }
+        // Nếu không tìm thấy, có thể là một thay đổi ở cấp model, không thuộc bảng nào
+        return null;
+    }
+
+    /**
+     * Helper mới, sử dụng globalId.toString() để trích xuất tên cột bị ảnh hưởng.
+     * Nó hoạt động bằng cách lấy index của bảng và cột, sau đó tra cứu trong model
+     * cũ hoặc mới để tìm ra tên cột gốc.
+     */
+    private String extractColumnNameFromGlobalId(GlobalId globalId, DbmlModel beforeModel, DbmlModel currentModel) {
+        // SỬA LỖI: Dùng toString() thay vì getPath()
+        String fullIdString = globalId.toString();
+
+        // Regex để tìm index của bảng và cột
+        Pattern pattern = Pattern.compile("tables/(\\d+)/columns/(\\d+)");
+        Matcher matcher = pattern.matcher(fullIdString);
+
+        if (matcher.find()) {
+            int tableIndex = Integer.parseInt(matcher.group(1));
+            int columnIndex = Integer.parseInt(matcher.group(2));
+
+            // Ưu tiên lấy tên cột từ model CŨ (beforeModel) vì nó đại diện cho trạng thái
+            // của đối tượng "trước khi" thay đổi.
+            if (tableIndex < beforeModel.getTables().size() &&
+                    columnIndex < beforeModel.getTables().get(tableIndex).getColumns().size()) {
+                return beforeModel.getTables().get(tableIndex).getColumns().get(columnIndex).getName();
+            }
+
+            // Nếu không có trong model cũ (ví dụ: cột mới được thêm), lấy từ model MỚI
+            if (tableIndex < currentModel.getTables().size() &&
+                    columnIndex < currentModel.getTables().get(tableIndex).getColumns().size()) {
+                return currentModel.getTables().get(tableIndex).getColumns().get(columnIndex).getName();
+            }
+        }
+        return "unknown_column"; // Trả về giá trị mặc định nếu không thể xác định
     }
     
     /**
@@ -225,4 +298,216 @@ public class VersionComparisonServiceImpl implements VersionComparisonService {
         String[] parts = globalId.split("/");
         return parts.length > 0 ? parts[parts.length - 1].replace("'", "") : "unknown";
     }
+
+    private List<VersionComparisonDTO.TableDiff> changeAnalysis(String diffChanges) throws JsonProcessingException {
+        List<VersionComparisonDTO.TableDiff> result = new ArrayList<>();
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode rootNode = mapper.readTree(diffChanges);
+
+        // Lấy danh sách các ID bảng từ các node JSON, chuyển thành Set để xử lý hiệu quả
+        Set<String> addedTableIds = getIdsFromNode(rootNode.get("addedTables"));
+        Set<String> removedTableIds = getIdsFromNode(rootNode.get("removedTables"));
+        JsonNode tableChangesNode = rootNode.get("tableChanges");
+
+        // Tập hợp tất cả các ID bảng từ mọi nguồn để không bỏ sót
+        Set<String> allTableIds = new HashSet<>();
+        allTableIds.addAll(addedTableIds);
+        allTableIds.addAll(removedTableIds);
+        if (tableChangesNode != null) {
+            tableChangesNode.fieldNames().forEachRemaining(allTableIds::add);
+        }
+
+        // Duyệt qua tất cả các bảng có liên quan
+        for (String tableId : allTableIds) {
+            boolean isAdded = addedTableIds.contains(tableId);
+            boolean isRemoved = removedTableIds.contains(tableId);
+            boolean hasDetails = tableChangesNode != null && tableChangesNode.has(tableId);
+
+            VersionComparisonDTO.TableDiff.TableDiffBuilder tableBuilder = VersionComparisonDTO.TableDiff.builder().tableName(tableId);
+
+            // Áp dụng logic mới để xác định DiffType
+            if (isAdded && !isRemoved) {
+                tableBuilder.diffType(VersionComparisonDTO.DiffType.ADDED);
+                // Một bảng mới có thể có chi tiết cột nếu được cung cấp
+                if (hasDetails) {
+                    tableBuilder.columnDiffs(processColumnChanges(tableChangesNode.get(tableId)));
+                }
+            } else if (isRemoved && !isAdded) {
+                tableBuilder.diffType(VersionComparisonDTO.DiffType.REMOVED);
+                // Bảng đã xóa không có chi tiết thay đổi cột
+            } else if (hasDetails || (isAdded && isRemoved)) {
+                // Trường hợp này chắc chắn là MODIFIED
+                tableBuilder.diffType(VersionComparisonDTO.DiffType.MODIFIED);
+                if (hasDetails) {
+                    tableBuilder.columnDiffs(processColumnChanges(tableChangesNode.get(tableId)));
+                }
+            } else {
+                // Bỏ qua nếu không rơi vào trường hợp nào (dữ liệu không nhất quán)
+                continue;
+            }
+
+            result.add(tableBuilder.build());
+        }
+
+        return result;
+    }
+    // Helper để chuyển JsonNode chứa mảng string thành Set<String>
+    private static Set<String> getIdsFromNode(JsonNode node) {
+        if (node == null || !node.isArray()) {
+            return Collections.emptySet();
+        }
+        return StreamSupport.stream(node.spliterator(), false)
+                .map(JsonNode::asText)
+                .collect(Collectors.toSet());
+    }
+
+
+    private static List<VersionComparisonDTO.ColumnDiff> processColumnChanges(JsonNode changesArray) {
+        Map<String, VersionComparisonDTO.ColumnDiff.ColumnDiffBuilder> columnBuilders = new LinkedHashMap<>();
+        List<JsonNode> unmappedTypeChanges = new ArrayList<>();
+
+        for (JsonNode change : changesArray) {
+            String property = change.get("property").asText();
+            String newValue = change.get("newValue").asText(null);
+            JsonNode oldValueNode = change.get("oldValue");
+            boolean isAdded = oldValueNode == null || oldValueNode.isNull();
+
+            if (property.equals("name")) {
+                VersionComparisonDTO.ColumnDiff.ColumnDiffBuilder builder = columnBuilders.computeIfAbsent(newValue, k -> VersionComparisonDTO.ColumnDiff.builder());
+                builder.columnName(newValue);
+
+                if (isAdded) {
+                    builder.diffType(VersionComparisonDTO.DiffType.ADDED);
+                } else {
+                    builder.diffType(VersionComparisonDTO.DiffType.MODIFIED);
+                    builder.changedProperties(new ArrayList<>(Collections.singletonList("name")));
+                }
+            } else if (property.equals("dataType")) {
+                if (isAdded) {
+                    columnBuilders.values().stream()
+                            .filter(b -> b.build().getDiffType() == VersionComparisonDTO.DiffType.ADDED && b.build().getCurrentType() == null)
+                            .findFirst()
+                            .ifPresent(builder -> builder.currentType(newValue));
+                } else {
+                    unmappedTypeChanges.add(change);
+                }
+            }
+        }
+
+        for(JsonNode typeChange : unmappedTypeChanges) {
+            columnBuilders.values().stream()
+                    .filter(b -> b.build().getDiffType() == VersionComparisonDTO.DiffType.MODIFIED && b.build().getBeforeType() == null)
+                    .findFirst()
+                    .ifPresent(builder -> {
+                        builder.beforeType(typeChange.get("oldValue").asText());
+                        builder.currentType(typeChange.get("newValue").asText());
+                        List<String> props = new ArrayList<>(builder.build().getChangedProperties());
+                        props.add("dataType");
+                        builder.changedProperties(props);
+                    });
+        }
+
+        return columnBuilders.values().stream().map(VersionComparisonDTO.ColumnDiff.ColumnDiffBuilder::build).collect(Collectors.toList());
+    }
+
+    public List<VersionComparisonDTO.TableDiff> createTableDiffs(Map<String, Object> diffResult, ObjectMapper objectMapper) {
+        if (diffResult == null || diffResult.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<VersionComparisonDTO.TableDiff> finalDiffs = new ArrayList<>();
+
+        // 1. Xử lý các bảng được THÊM MỚI
+        // Lấy về một danh sách các đối tượng TableModel, không phải chuỗi nữa
+        List<TableModel> addedTableObjects = objectMapper.convertValue(
+                diffResult.get("addedTables"),
+                new TypeReference<List<TableModel>>() {}
+        );
+
+        if (addedTableObjects != null) {
+            for (TableModel addedTable : addedTableObjects) {
+                List<VersionComparisonDTO.ColumnDiff> addedColumns = new ArrayList<>();
+
+                // Vì đã có sẵn đối tượng TableModel, ta có thể lấy danh sách cột trực tiếp
+                if (addedTable.getColumns() != null) {
+                    for (ColumnModel column : addedTable.getColumns()) {
+                        addedColumns.add(VersionComparisonDTO.ColumnDiff.builder()
+                                .columnName(column.getName())
+                                .diffType(VersionComparisonDTO.DiffType.ADDED)
+                                .currentType(column.getDataType())
+                                .newValue(column)
+                                .build());
+                    }
+                }
+
+                finalDiffs.add(VersionComparisonDTO.TableDiff.builder()
+                        .tableName(addedTable.getName())
+                        .diffType(VersionComparisonDTO.DiffType.ADDED)
+                        .columnDiffs(addedColumns) // <-- Danh sách cột bây giờ đã đầy đủ
+                        .build());
+            }
+        }
+
+        // 2. Xử lý các bảng đã BỊ XÓA
+        List<String> removedTableNames = objectMapper.convertValue(diffResult.get("removedTables"), new TypeReference<>() {});
+        if (removedTableNames != null) {
+            for (String tableName : removedTableNames) {
+                finalDiffs.add(VersionComparisonDTO.TableDiff.builder()
+                        .tableName(tableName)
+                        .diffType(VersionComparisonDTO.DiffType.REMOVED)
+                        .build());
+            }
+        }
+
+        // 3. Xử lý các bảng được SỬA ĐỔI
+        Map<String, List<Map<String, Object>>> tableChanges = objectMapper.convertValue(
+                diffResult.get("tableChanges"),
+                new TypeReference<>() {}
+        );
+
+        if (tableChanges != null) {
+            for (Map.Entry<String, List<Map<String, Object>>> entry : tableChanges.entrySet()) {
+                String tableName = entry.getKey();
+                List<VersionComparisonDTO.ColumnDiff> columnDiffs = new ArrayList<>();
+
+                for (Map<String, Object> changeDetail : entry.getValue()) {
+                    String changeTypeStr = (String) changeDetail.get("changeType");
+                    VersionComparisonDTO.DiffType columnDiffType = VersionComparisonDTO.DiffType.valueOf(changeTypeStr); // ADDED, REMOVED, MODIFIED
+
+                    VersionComparisonDTO.ColumnDiff.ColumnDiffBuilder columnBuilder = VersionComparisonDTO.ColumnDiff.builder().diffType(columnDiffType);
+
+                    if (columnDiffType == VersionComparisonDTO.DiffType.ADDED) {
+                        ColumnModel newColumn = objectMapper.convertValue(changeDetail.get("value"), ColumnModel.class);
+                        columnBuilder.columnName(newColumn.getName())
+                                .currentType(newColumn.getDataType())
+                                .newValue(newColumn);
+                    } else if (columnDiffType == VersionComparisonDTO.DiffType.REMOVED) {
+                        ColumnModel oldColumn = objectMapper.convertValue(changeDetail.get("value"), ColumnModel.class);
+                        columnBuilder.columnName(oldColumn.getName())
+                                .beforeType(oldColumn.getDataType())
+                                .oldValue(oldColumn);
+                    } else if (columnDiffType == VersionComparisonDTO.DiffType.MODIFIED) {
+                        ColumnModel oldColumn = objectMapper.convertValue(changeDetail.get("oldValue"), ColumnModel.class);
+                        ColumnModel newColumn = objectMapper.convertValue(changeDetail.get("newValue"), ColumnModel.class);
+                        columnBuilder.columnName(newColumn.getName()) // Lấy tên mới làm tên chính
+                                .beforeType(oldColumn.getDataType())
+                                .currentType(newColumn.getDataType())
+                                .oldValue(oldColumn)
+                                .newValue(newColumn);
+                    }
+                    columnDiffs.add(columnBuilder.build());
+                }
+
+                finalDiffs.add(VersionComparisonDTO.TableDiff.builder()
+                        .tableName(tableName)
+                        .diffType(VersionComparisonDTO.DiffType.MODIFIED)
+                        .columnDiffs(columnDiffs)
+                        .build());
+            }
+        }
+
+        return finalDiffs;
+    }
+
+
 } 
