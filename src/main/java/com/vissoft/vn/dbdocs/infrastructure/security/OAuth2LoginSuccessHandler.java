@@ -80,7 +80,7 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
 
         // Lấy redirect_uri từ request parameters
         String redirectUri = request.getParameter("redirect_uri");
-        String targetOrigin = determineTargetOrigin(redirectUri);
+        String targetOrigin = determineTargetOrigin(frontendDomainUrl);
         
         log.info("OAuth2 login success for provider: {}, redirectUri: {}, targetOrigin: {}", 
                 provider, redirectUri, targetOrigin);

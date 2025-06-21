@@ -42,12 +42,40 @@ spring:
   javers:
     enabled: false
 
+  # Cấu hình CORS
+  web:
+    cors:
+      # Chỉ định cụ thể các domain được phép, KHÔNG dùng "*" với allowCredentials=true
+      allowed-origins: ${CORS_ALLOWED_ORIGINS}
+      # Cho phép sử dụng mẫu
+      allowed-origin-patterns: "*" 
+      allowed-methods: "GET,POST,PUT,DELETE,OPTIONS,PATCH"
+      allowed-headers: "*"
+      exposed-headers: "Authorization, Content-Disposition"
+      allow-credentials: true
+      max-age: 3600
+      
+  # Cho phép ghi đè bean definition
+  main:
+    allow-bean-definition-overriding: true
+
 jwt:
   expiration: 86400000  # 24 hours in milliseconds
   secret: c2VjcmV0LWtleS1mb3ItZGJkb2NzLWFwcC1kZXZlbG9wbWVudC0yMDI1LTA2LTExLXZpc3NvZnQ=  # Base64 encoded secret key
 
 server:
-  port: 8081
+  port: 8080
+
+# CORS Configuration
+cors:
+  # Thêm cấu hình chi tiết cho CORS
+  allowed-origins: "http://localhost:4200,http://localhost:3000,http://127.0.0.1:4200"
+  allowed-origin-patterns: "*"
+  allowed-methods: "GET,POST,PUT,DELETE,OPTIONS,PATCH"
+  allowed-headers: "*"
+  exposed-headers: "Authorization, Content-Disposition"
+  allow-credentials: true
+  max-age: 3600
 
 google:
   oauth2:
@@ -67,3 +95,6 @@ springdoc:
   default-produces-media-type: application/json
   show-actuator: false
   packages-to-scan: com.vissoft.vn.dbdocs.interfaces.rest
+domain:
+  frontend:
+    url: ${VITE_FRONTEND_URL}
