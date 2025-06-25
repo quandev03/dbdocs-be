@@ -70,4 +70,8 @@ springdoc:
   default-consumes-media-type: application/json
   default-produces-media-type: application/json
   show-actuator: false
-  packages-to-scan: com.vissoft.vn.dbdocs.interfaces.rest 
+  packages-to-scan: com.vissoft.vn.dbdocs.interfaces.rest
+
+domain:
+  frontend:
+    url: ${VITE_FRONTEND_URL:http://localhost:4200} 

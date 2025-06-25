@@ -4,16 +4,13 @@ import java.io.IOException;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vissoft.vn.dbdocs.application.service.SocialLoginService;
 import com.vissoft.vn.dbdocs.infrastructure.config.JwtConfig;
-import com.vissoft.vn.dbdocs.interfaces.rest.dto.TokenResponseDto;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -27,11 +24,6 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
 
     private final SocialLoginService socialLoginService;
     private final JwtConfig jwtConfig;
-    private final ObjectMapper objectMapper;
-
-
-    @Value("${cors.allowed-origins:http://localhost:4200,http://localhost:3000}")
-    private String allowedOrigins;
 
     @Value("${domain.frontend.url}")
     private String frontendDomainUrl;
@@ -72,93 +64,22 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
                 GOOGLE_PROVIDER.equals(provider) ? 1 : 2
         );
 
-        TokenResponseDto tokenResponse = new TokenResponseDto(
-                token,
-                "Bearer",
-                jwtConfig.getExpiration()
-        );
-
-        // Lấy redirect_uri từ request parameters
-        String redirectUri = request.getParameter("redirect_uri");
-        String targetOrigin = determineTargetOrigin(frontendDomainUrl);
+        // Tạo redirect URL về frontend với token
+        String frontendUrl = frontendDomainUrl;
+        if (!frontendUrl.endsWith("/")) {
+            frontendUrl += "/";
+        }
         
-        log.info("OAuth2 login success for provider: {}, redirectUri: {}, targetOrigin: {}", 
-                provider, redirectUri, targetOrigin);
-
-        String html = "<!DOCTYPE html>\n" +
-                  "<html>\n" +
-                  "<head>\n" +
-                  "    <title>Authentication Success</title>\n" +
-                  "</head>\n" +
-                  "<body>\n" +
-                  "    <h3>Authentication Successful!</h3>\n" +
-                  "    <p>This window will close automatically.</p>\n" +
-                  "    <script>\n" +
-                  "        try {\n" +
-                  "            // Lấy target origin từ query parameter hoặc referer\n" +
-                  "            let targetOrigin = '" + targetOrigin + "';\n" +
-                  "            console.log('Target origin:', targetOrigin);\n" +
-                  "            \n" +
-                  "            // Gửi token về cửa sổ cha qua postMessage\n" +
-                  "            if (window.opener) {\n" +
-                  "                const tokenData = " + objectMapper.writeValueAsString(tokenResponse) + ";\n" +
-                  "                console.log('Sending token data to parent window');\n" +
-                  "                window.opener.postMessage(tokenData, targetOrigin);\n" +
-                  "                \n" +
-                  "                // Đóng cửa sổ sau 1 giây\n" +
-                  "                setTimeout(() => window.close(), 1000);\n" +
-                  "            } else {\n" +
-                  "                console.log('No opener window found, saving token to localStorage');\n" +
-                  "                // Nếu không có cửa sổ cha (trường hợp không dùng popup)\n" +
-                  "                localStorage.setItem('token', '" + token + "');\n" +
-                  "                localStorage.setItem('tokenType', 'Bearer');\n" +
-                  "                localStorage.setItem('expiresIn', '" + jwtConfig.getExpiration() + "');\n" +
-                  "                \n" +
-                  "                // Chuyển hướng về trang chủ hoặc redirect_uri nếu có\n" +
-                  "                window.location.href = '" + (redirectUri != null ? redirectUri : "/") + "';\n" +
-                  "            }\n" +
-                  "        } catch (e) {\n" +
-                  "            console.error('Error saving token:', e);\n" +
-                  "            document.body.innerHTML += '<p>Error: ' + e.message + '</p>';\n" +
-                  "        }\n" +
-                  "    </script>\n" +
-                  "</body>\n" +
-                  "</html>";
-
-        response.setContentType(MediaType.TEXT_HTML_VALUE);
-        response.getWriter().write(html);
+        // Redirect về frontend với token trong query parameters
+        String redirectUrl = frontendUrl + "auth/callback?token=" + token + 
+                           "&tokenType=Bearer&expiresIn=" + jwtConfig.getExpiration() +
+                           "&provider=" + provider;
+        
+        log.info("OAuth2 login success for provider: {}, redirecting to: {}", provider, redirectUrl);
+        
+        response.sendRedirect(redirectUrl);
     }
-    
-    private String determineTargetOrigin(String redirectUri) {
-        // Mặc định là "*" nếu allowedOrigins là "*"
-        if ("*".equals(allowedOrigins.trim())) {
-            return "*";
-        }
-        
-        // Nếu có redirect_uri, lấy origin từ đó
-        if (redirectUri != null && !redirectUri.isEmpty()) {
-            try {
-                java.net.URL url = new java.net.URL(redirectUri);
-                return url.getProtocol() + "://" + url.getAuthority();
-            } catch (Exception e) {
-                log.error("Invalid redirect_uri: {}", redirectUri, e);
-            }
-        }
-        
-        // Nếu không có redirect_uri hợp lệ, sử dụng origin đầu tiên trong danh sách allowed origins
-        String[] origins = allowedOrigins.split(",");
-        if (origins.length > 0) {
-            String origin = origins[0].trim();
-            // Đảm bảo origin có protocol
-            if (!origin.startsWith("http://") && !origin.startsWith("https://")) {
-                origin = "http://" + origin;
-            }
-            return origin;
-        }
-        
-        // Fallback cuối cùng
-        return frontendDomainUrl;
-    }
+
 
     private String determineProvider(Map<String, Object> attributes) {
         if (attributes.containsKey("sub")) {

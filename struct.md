@@ -1,3 +1,80 @@
+# Cấu trúc Project
+
+[dbdocs]
+├── src
+│   ├── main
+│   │   ├── java
+│   │   │   └── com
+│   │   │       └── vissoft
+│   │   │           └── vn
+│   │   │               └── dbdocs
+│   │   │                   ├── application
+│   │   │                   │   ├── dto/
+│   │   │                   │   ├── port/
+│   │   │                   │   ├── service/
+│   │   │                   │   └── usecase/
+│   │   │                   ├── config
+│   │   │                   ├── domain
+│   │   │                   │   ├── entity/
+│   │   │                   │   ├── exception/
+│   │   │                   │   ├── model/
+│   │   │                   │   ├── repository/
+│   │   │                   │   └── service/
+│   │   │                   ├── infrastructure
+│   │   │                   │   ├── adapter/
+│   │   │                   │   ├── config/
+│   │   │                   │   ├── constant/
+│   │   │                   │   ├── exception/
+│   │   │                   │   ├── filter/
+│   │   │                   │   ├── mapper/
+│   │   │                   │   ├── persistence/
+│   │   │                   │   │   ├── entity/
+│   │   │                   │   │   └── repository/
+│   │   │                   │   ├── security/
+│   │   │                   │   └── util/
+│   │   │                   ├── interfaces
+│   │   │                   │   ├── exception/
+│   │   │                   │   └── rest/
+│   │   │                   │       ├── dto/
+│   │   │                   │       └── impl/
+│   │   │                   └── DbdocsApplication.java
+│   │   └── resources
+│   │       ├── static
+│   │       ├── templates
+│   │       ├── application.yml
+│   │       ├── application-dev.yml
+│   │       ├── application-prod.yml
+│   │       └── ...
+│   └── test
+│       └── ...
+├── .gitignore
+├── pom.xml
+├── Dockerfile
+├── docker-compose.yml
+├── README.md
+├── struct.md
+└── ...
+
+## Giải thích các thành phần chính
+
+- **src/main/java/com/vissoft/vn/dbdocs/**: Chứa mã nguồn chính của ứng dụng, chia thành các layer:
+  - **application/**: Chứa các lớp service, DTO, port, usecase phục vụ cho logic ứng dụng.
+  - **domain/**: Chứa các entity, repository, model, service, exception liên quan đến domain.
+  - **infrastructure/**: Chứa các thành phần liên quan đến hạ tầng như util, security, mapper, persistence, config...
+  - **interfaces/**: Chứa các lớp controller (rest), exception handler phục vụ giao tiếp với bên ngoài.
+  - **config/**: Các file cấu hình Spring, OpenAPI, Swagger, Javers...
+  - **DbdocsApplication.java**: Lớp main khởi động ứng dụng Spring Boot.
+
+- **src/main/resources/**: Chứa các file cấu hình, template, static resource, message...
+
+- **src/test/**: Chứa mã nguồn test.
+
+- **pom.xml**: File cấu hình Maven.
+- **Dockerfile, docker-compose.yml**: Cấu hình Docker.
+- **README.md, struct.md, HELP.md**: Tài liệu dự án.
+
+Các thư mục khác như `.git`, `.idea`, `.vscode`, `.mvn`, `target` là các thư mục hệ thống, cấu hình IDE, build.
+
 # Hexagonal Architecture (Ports & Adapters) Structure
 
 src/main/java/com/vissoft/vn/dbdocs/
@@ -29,7 +106,7 @@ src/main/java/com/vissoft/vn/dbdocs/
 │   │       └── package-info.java  # Repository adapters documentation
 │   └── config/                  # Configuration Classes
 │       └── package-info.java      # Configuration documentation
-└── interface/                   # Interface Layer (External Adapters)
+└── interfaces/                 # Interface Layer (External Adapters)
     ├── package-info.java          # Interface layer documentation
     ├── rest/                     # REST Adapters
     │   ├── package-info.java      # REST documentation
@@ -55,7 +132,7 @@ src/main/java/com/vissoft/vn/dbdocs/
 - **persistence/repository/**: Chứa repository adapters implement ports
 - **config/**: Chứa các configuration classes (Spring Config, etc.)
 
-### 4. Interface Layer (interface/)
+### 4. Interface Layer (interfaces/)
 - **rest/**: Chứa REST controllers và HTTP adapters
 - **rest/dto/**: Chứa REST-specific DTOs (requests/responses)
 - **exception/**: Chứa global exception handlers
@@ -63,7 +140,7 @@ src/main/java/com/vissoft/vn/dbdocs/
 ## Nguyên tắc Dependency (Hexagonal Architecture):
 
 ```
-Interface → Application → Domain ← Infrastructure
+Interfaces → Application → Domain ← Infrastructure
      ↓           ↓          ↑           ↑
    (HTTP)    (Use Cases) (Models)   (Database)
 ```
@@ -72,13 +149,13 @@ Interface → Application → Domain ← Infrastructure
 - **Domain**: Không phụ thuộc vào layer nào - pure business logic
 - **Application**: Chỉ phụ thuộc vào Domain - chứa use cases và ports
 - **Infrastructure**: Implement các ports từ Application layer
-- **Interface**: Phụ thuộc vào Application layer để call use cases
+- **Interfaces**: Phụ thuộc vào Application layer để call use cases
 
 ### Key Principles:
 - **Domain**: Không import Spring hay JPA
 - **Application**: Chứa logic use-case, chỉ phụ thuộc vào domain
 - **Infrastructure**: Chỉ chứa các adapter cụ thể (Spring Data JPA)
-- **Interface**: Controllers, mapping từ HTTP → DTO → use-case
+- **Interfaces**: Controllers, mapping từ HTTP → DTO → use-case
 
 ## Lợi ích của Hexagonal Architecture:
 

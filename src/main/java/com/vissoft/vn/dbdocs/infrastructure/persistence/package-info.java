@@ -1,12 +1,12 @@
 /**
- * Infrastructure Persistence
+ * Persistence Adapters package for Infrastructure layer.
  * 
- * This package contains implementations of repository interfaces
- * and database access logic.
+ * This package contains persistence-related adapters including:
+ * - entity/: JPA entities for database mapping
+ * - repository/: Repository adapter implementations
  * 
- * It includes JPA entities, repository implementations, and
- * database-specific code that fulfills the contracts defined
- * in the domain layer.
+ * These components handle data persistence and retrieval,
+ * implementing domain repository contracts using concrete technologies.
  * 
  * @author VIS Software
  */

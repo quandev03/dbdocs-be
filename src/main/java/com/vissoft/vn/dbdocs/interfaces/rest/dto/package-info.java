@@ -1,19 +1,12 @@
 /**
- * REST Interface DTOs
+ * REST DTOs package for Interface layer.
  * 
- * This package contains Data Transfer Objects specific to REST API
- * requests and responses.
+ * This package contains REST-specific Data Transfer Objects (DTOs)
+ * for HTTP requests and responses. These DTOs handle serialization/
+ * deserialization of data between external clients and the application.
  * 
- * These DTOs handle HTTP-specific data structures and validation,
- * separate from application and domain models.
- * 
- * Examples: CreateUserRequest, UpdateUserRequest, UserResponse
- * 
- * Principles:
- * - HTTP/REST specific data structures
- * - Input validation annotations
- * - Separate from domain and application DTOs
- * - API versioning support
+ * These DTOs are specific to the REST interface and should not be
+ * used in other layers of the application.
  * 
  * @author VIS Software
  */

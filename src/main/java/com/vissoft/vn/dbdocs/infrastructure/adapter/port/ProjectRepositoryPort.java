@@ -2,7 +2,7 @@ package com.vissoft.vn.dbdocs.infrastructure.adapter.port;
 
 import com.vissoft.vn.dbdocs.domain.entity.Project;
 import com.vissoft.vn.dbdocs.domain.repository.ProjectRepository;
-import com.vissoft.vn.dbdocs.infrastructure.adapter.ProjectRepositoryAdapter;
+import com.vissoft.vn.dbdocs.infrastructure.persistence.repository.ProjectRepositoryAdapter;
 import com.vissoft.vn.dbdocs.infrastructure.mapper.ProjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;

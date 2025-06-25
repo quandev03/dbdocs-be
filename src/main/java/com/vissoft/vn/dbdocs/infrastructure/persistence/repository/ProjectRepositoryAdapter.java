@@ -1,4 +1,4 @@
-package com.vissoft.vn.dbdocs.infrastructure.adapter;
+package com.vissoft.vn.dbdocs.infrastructure.persistence.repository;
 import com.vissoft.vn.dbdocs.domain.entity.Project;
 
 import java.util.List;
