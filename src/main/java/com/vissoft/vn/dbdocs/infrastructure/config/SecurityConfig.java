@@ -36,8 +36,8 @@ public class SecurityConfig {
         // Cho phép OPTIONS request để CORS preflight có thể hoạt động
         http
             .csrf(AbstractHttpConfigurer::disable)
-            // Tắt cấu hình CORS mặc định, để sử dụng SimpleCorsFilter thay thế
-            .cors(AbstractHttpConfigurer::disable)
+            // Enable CORS với configuration từ corsConfigurationSource
+            .cors(cors -> cors.configurationSource(corsConfigurationSource))
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth

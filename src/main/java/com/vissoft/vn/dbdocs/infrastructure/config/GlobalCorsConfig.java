@@ -19,7 +19,7 @@ public class GlobalCorsConfig {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
                 registry.addMapping("/**")
-                    .allowedOrigins("http://localhost:4200", "http://localhost:3000", "http://127.0.0.1:4200")
+                    .allowedOrigins("http://localhost:4200", "http://localhost:3000", "http://127.0.0.1:4200", "http://dbdocs.mmoall.com")
                     .allowedOriginPatterns("*")
                     .allowedMethods("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS")
                     .allowedHeaders("*")

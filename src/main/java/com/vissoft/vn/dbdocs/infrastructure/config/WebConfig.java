@@ -26,7 +26,8 @@ public class WebConfig implements WebMvcConfigurer {
             "http://127.0.0.1:4200",
             "http://127.0.0.1:3000",
             "http://localhost:8080",
-            "http://localhost"
+            "http://localhost",
+            "http://dbdocs.mmoall.com"
     );
     
     private static final List<String> ALLOWED_METHODS = Arrays.asList(
