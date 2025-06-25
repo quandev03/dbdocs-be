@@ -20,7 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class CorsHeadersFilter extends OncePerRequestFilter {
 
-    @Value("${cors.allowed-origins:http://dbdocs.mmoall.com}")
+    @Value("${cors.allowed-origins:https://dbdocs.mmoall.com}")
     private String allowedOrigins;
 
     @Override
