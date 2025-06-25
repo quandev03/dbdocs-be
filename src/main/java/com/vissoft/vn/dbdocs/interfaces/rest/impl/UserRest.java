@@ -15,7 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 @RestController
 @RequiredArgsConstructor
 @Slf4j
-@CrossOrigin(origins = {"http://localhost:4200", "http://localhost:3000", "http://127.0.0.1:4200"}, maxAge = 3600, allowCredentials = "true")
+@CrossOrigin(origins = {"http://dbdocs.mmoall.com"}, maxAge = 3600, allowCredentials = "true")
 public class UserRest implements UserOperator {
     
     private final UserService userService;
