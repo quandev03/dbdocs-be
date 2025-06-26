@@ -4,6 +4,9 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 import com.vissoft.vn.dbdocs.domain.service.*;
+import com.vissoft.vn.dbdocs.domain.model.dbml.DbmlModel;
+import com.vissoft.vn.dbdocs.domain.model.dbml.TableModel;
+import com.vissoft.vn.dbdocs.domain.model.dbml.ColumnModel;
 import com.vissoft.vn.dbdocs.infrastructure.util.DataUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -58,6 +61,7 @@ public class VersionServiceImpl implements VersionService {
     private final DdlScriptResponseMapper ddlScriptResponseMapper;
     private final ProjectAccessService projectAccessService;
     private final GeneraScriptDDLService generaScriptDDLService;
+    private final DbmlParserService dbmlParserService;
 
     @Override
     @Transactional
@@ -345,10 +349,21 @@ public class VersionServiceImpl implements VersionService {
                 request.getProjectId(), request.getFromVersion(), request.getToVersion(), request.getDialect());
         
         try {
-            // Check if the project exists
-            if (!projectRepository.existsById(request.getProjectId())) {
-                log.error(ErrorCode.PROJECT_NOT_FOUND.name());
-                throw BaseException.of(ErrorCode.PROJECT_NOT_FOUND);
+            // Get project information
+            Project project = getAndCheckProject(request.getProjectId());
+            
+            // Get version information for detailed header
+            Version fromVersion = null;
+            Version toVersion = null;
+            
+            if (request.getFromVersion() != null) {
+                fromVersion = versionRepository.findByProjectIdAndCodeVersion(request.getProjectId(), request.getFromVersion())
+                        .orElse(null);
+            }
+            
+            if (request.getToVersion() != null) {
+                toVersion = versionRepository.findByProjectIdAndCodeVersion(request.getProjectId(), request.getToVersion())
+                        .orElse(null);
             }
             
             // Use VersionComparisonService to compare versions
@@ -359,14 +374,12 @@ public class VersionServiceImpl implements VersionService {
             
             log.debug("Version comparison completed, generating DDL script");
             
-            // Create a StringBuilder to hold the DDL script
+            // Create detailed header with project and version information
             StringBuilder ddlScript = new StringBuilder();
             String dialectName = getDialectName(request.getDialect());
-            ddlScript.append(Constants.SQL.Formatting.COMMENT_PREFIX).append("DDL Script generated for project: ").append(request.getProjectId())
-                    .append(Constants.SQL.Formatting.NEW_LINE).append(Constants.SQL.Formatting.COMMENT_PREFIX).append("From version: ").append(request.getFromVersion())
-                    .append(Constants.SQL.Formatting.NEW_LINE).append(Constants.SQL.Formatting.COMMENT_PREFIX).append("To version: ").append(request.getToVersion())
-                    .append(Constants.SQL.Formatting.NEW_LINE).append(Constants.SQL.Formatting.COMMENT_PREFIX).append("Dialect: ").append(dialectName)
-                    .append(Constants.SQL.Formatting.NEW_LINE).append(Constants.SQL.Formatting.NEW_LINE);
+            
+            // Generate detailed header for update DDL
+            ddlScript.append(generateUpdateDdlHeader(project, fromVersion, toVersion, dialectName, request));
 
             ddlScript.append(generaScriptDDLService.generateDDL(comparisonDTO, request.getDialect()));
             
@@ -914,38 +927,28 @@ public class VersionServiceImpl implements VersionService {
             
             log.debug("Found DBML content with length: {} bytes", dbmlContent.length());
             
-            // Tạo DDL script từ DBML
+            // Parse DBML content thành DbmlModel
+            DbmlModel dbmlModel = dbmlParserService.parseDbml(dbmlContent);
+            log.debug("Parsed DBML successfully - found {} tables", dbmlModel.getTables().size());
+            
+            // Chuyển đổi DbmlModel thành VersionComparisonDTO để sử dụng với GeneraScriptDDLService
+            VersionComparisonDTO versionComparison = convertDbmlModelToVersionComparison(dbmlModel);
+            
+            // Get project information for detailed header
+            Project project = getAndCheckProject(request.getProjectId());
+            
+            // Tạo DDL script sử dụng GeneraScriptDDLService
             StringBuilder ddlScript = new StringBuilder();
             
             // Xác định tên dialect
             String dialectName = getDialectName(request.getDialect());
             
-            // Thêm header comment
-            ddlScript.append(Constants.SQL.Formatting.COMMENT_PREFIX).append("DDL Script for project: ").append(request.getProjectId())
-                    .append(Constants.SQL.Formatting.NEW_LINE).append(Constants.SQL.Formatting.COMMENT_PREFIX).append("Version: ").append(request.getVersionNumber())
-                    .append(Constants.SQL.Formatting.NEW_LINE).append(Constants.SQL.Formatting.COMMENT_PREFIX).append("Dialect: ").append(dialectName)
-                    .append(Constants.SQL.Formatting.NEW_LINE).append(Constants.SQL.Formatting.NEW_LINE);
+            // Generate detailed header for create database DDL
+            ddlScript.append(generateCreateDdlHeader(project, version, changeLog, dialectName, request.getVersionNumber()));
             
-            // Parse DBML content và tạo DDL
-            switch (request.getDialect()) {
-                case Constants.SQL.Dialect.MYSQL:
-                case Constants.SQL.Dialect.MARIADB:
-                    generateMySqlDdlFromDbml(dbmlContent, ddlScript);
-                    break;
-                case Constants.SQL.Dialect.POSTGRESQL:
-                    generatePostgreSqlDdlFromDbml(dbmlContent, ddlScript);
-                    break;
-                case Constants.SQL.Dialect.ORACLE:
-                    generateOracleDdlFromDbml(dbmlContent, ddlScript);
-                    break;
-                case Constants.SQL.Dialect.SQL_SERVER:
-                    generateSqlServerDdlFromDbml(dbmlContent, ddlScript);
-                    break;
-                default:
-                    // Mặc định sử dụng MySQL
-                    generateMySqlDdlFromDbml(dbmlContent, ddlScript);
-                    break;
-            }
+            // Sử dụng GeneraScriptDDLService để tạo DDL
+            String generatedDdl = generaScriptDDLService.generateDDL(versionComparison, request.getDialect());
+            ddlScript.append(generatedDdl);
             
             log.info("DDL script generated successfully with length: {} characters", ddlScript.length());
             
@@ -961,402 +964,97 @@ public class VersionServiceImpl implements VersionService {
     }
     
     /**
-     * Tạo DDL script MySQL từ DBML
+     * Chuyển đổi DbmlModel thành VersionComparisonDTO để tạo DDL cho toàn bộ database
+     * @param dbmlModel The parsed DBML model
+     * @return VersionComparisonDTO representing all tables as "ADDED"
      */
-    private void generateMySqlDdlFromDbml(String dbmlContent, StringBuilder ddlScript) {
-        try {
-            log.debug("Parsing DBML content to generate MySQL DDL");
+    private VersionComparisonDTO convertDbmlModelToVersionComparison(DbmlModel dbmlModel) {
+        VersionComparisonDTO comparison = new VersionComparisonDTO();
+        comparison.setProjectId(dbmlModel.getProjectName());
+        comparison.setFromVersion(0); // No previous version
+        comparison.setToVersion(1); // Current version
+        
+        List<VersionComparisonDTO.TableDiff> tableDiffs = new ArrayList<>();
+        
+        // Chuyển đổi tất cả tables trong DbmlModel thành TableDiff với type ADDED
+        for (TableModel table : dbmlModel.getTables()) {
+            VersionComparisonDTO.TableDiff tableDiff = new VersionComparisonDTO.TableDiff();
+            tableDiff.setTableName(table.getName());
+            tableDiff.setDiffType(VersionComparisonDTO.DiffType.ADDED);
             
-            // Phân tích DBML để lấy danh sách tables, columns, etc.
-            List<DbmlTable> tables = parseDbmlContent(dbmlContent);
+            List<VersionComparisonDTO.ColumnDiff> columnDiffs = new ArrayList<>();
             
-            // Tạo câu lệnh CREATE TABLE cho mỗi bảng
-            for (DbmlTable table : tables) {
-                ddlScript.append(Constants.SQL.Formatting.COMMENT_PREFIX).append("Table: ").append(table.getName()).append(Constants.SQL.Formatting.NEW_LINE);
-                ddlScript.append(Constants.SQL.Keywords.CREATE_TABLE_IF_NOT_EXISTS).append(" ")
-                        .append(Constants.SQL.Identifiers.MYSQL_IDENTIFIER_START).append(table.getName())
-                        .append(Constants.SQL.Identifiers.MYSQL_IDENTIFIER_END).append(" ")
-                        .append(Constants.SQL.Formatting.OPEN_PARENTHESIS).append(Constants.SQL.Formatting.NEW_LINE);
+            // Chuyển đổi columns
+            for (ColumnModel column : table.getColumns()) {
+                VersionComparisonDTO.ColumnDiff columnDiff = new VersionComparisonDTO.ColumnDiff();
+                columnDiff.setColumnName(column.getName());
+                columnDiff.setDiffType(VersionComparisonDTO.DiffType.ADDED);
                 
-                // Tạo định nghĩa cột
-                for (int i = 0; i < table.getColumns().size(); i++) {
-                    DbmlColumn column = table.getColumns().get(i);
-                    ddlScript.append("  ")
-                            .append(Constants.SQL.Identifiers.MYSQL_IDENTIFIER_START).append(column.getName())
-                            .append(Constants.SQL.Identifiers.MYSQL_IDENTIFIER_END).append(" ")
-                            .append(column.getType());
-                    
-                    // Thêm các thuộc tính cột
-                    if (column.isPrimaryKey()) {
-                        ddlScript.append(" PRIMARY KEY");
-                    }
-                    if (column.isNotNull()) {
-                        ddlScript.append(" NOT NULL");
-                    }
-                    if (column.getDefaultValue() != null) {
-                        ddlScript.append(" DEFAULT ").append(column.getDefaultValue());
-                    }
-                    
-                    // Thêm dấu phẩy nếu không phải cột cuối cùng
-                    if (i < table.getColumns().size() - 1) {
-                        ddlScript.append(Constants.SQL.Formatting.COMMA);
-                    }
-                    ddlScript.append(Constants.SQL.Formatting.NEW_LINE);
+                // Xây dựng column type string với attributes theo format của ParsedField
+                StringBuilder columnTypeBuilder = new StringBuilder();
+                columnTypeBuilder.append(column.getDataType());
+                
+                // Thêm type parameter nếu có
+                if (column.getTypeParam() != null && !column.getTypeParam().trim().isEmpty()) {
+                    columnTypeBuilder.append("(").append(column.getTypeParam()).append(")");
                 }
                 
-                // Thêm foreign keys nếu có
-                if (!table.getReferences().isEmpty()) {
-                    if (!table.getColumns().isEmpty()) {
-                        ddlScript.append(Constants.SQL.Formatting.COMMA).append(Constants.SQL.Formatting.NEW_LINE);
-                    }
-                    
-                    for (int i = 0; i < table.getReferences().size(); i++) {
-                        DbmlReference ref = table.getReferences().get(i);
-                        ddlScript.append("  FOREIGN KEY (")
-                                .append(Constants.SQL.Identifiers.MYSQL_IDENTIFIER_START).append(ref.getFromColumn())
-                                .append(Constants.SQL.Identifiers.MYSQL_IDENTIFIER_END).append(") REFERENCES ")
-                                .append(Constants.SQL.Identifiers.MYSQL_IDENTIFIER_START).append(ref.getToTable())
-                                .append(Constants.SQL.Identifiers.MYSQL_IDENTIFIER_END).append("(")
-                                .append(Constants.SQL.Identifiers.MYSQL_IDENTIFIER_START).append(ref.getToColumn())
-                                .append(Constants.SQL.Identifiers.MYSQL_IDENTIFIER_END).append(")");
-                        
-                        // Thêm dấu phẩy nếu không phải foreign key cuối cùng
-                        if (i < table.getReferences().size() - 1) {
-                            ddlScript.append(Constants.SQL.Formatting.COMMA);
-                        }
-                        ddlScript.append(Constants.SQL.Formatting.NEW_LINE);
-                    }
+                // Thêm attributes dựa trên properties của ColumnModel
+                List<String> attrs = new ArrayList<>();
+                
+                if (column.isPrimaryKey()) {
+                    attrs.add("pk");
                 }
                 
-                ddlScript.append(Constants.SQL.Formatting.CLOSE_PARENTHESIS).append(Constants.SQL.Formatting.SEMICOLON)
-                        .append(Constants.SQL.Formatting.NEW_LINE).append(Constants.SQL.Formatting.NEW_LINE);
-            }
-            
-            // Tạo indexes nếu có
-            for (DbmlTable table : tables) {
-                if (!table.getIndexes().isEmpty()) {
-                    for (DbmlIndex index : table.getIndexes()) {
-                        ddlScript.append("CREATE ");
-                        if (index.isUnique()) {
-                            ddlScript.append("UNIQUE ");
-                        }
-                        ddlScript.append("INDEX ").append(index.getName()).append(" ON ")
-                                .append(Constants.SQL.Identifiers.MYSQL_IDENTIFIER_START).append(table.getName())
-                                .append(Constants.SQL.Identifiers.MYSQL_IDENTIFIER_END).append(" (");
-                        
-                        // Thêm các cột trong index
-                        for (int i = 0; i < index.getColumns().size(); i++) {
-                            ddlScript.append(Constants.SQL.Identifiers.MYSQL_IDENTIFIER_START).append(index.getColumns().get(i))
-                                    .append(Constants.SQL.Identifiers.MYSQL_IDENTIFIER_END);
-                            
-                            // Thêm dấu phẩy nếu không phải cột cuối cùng
-                            if (i < index.getColumns().size() - 1) {
-                                ddlScript.append(Constants.SQL.Formatting.COMMA).append(" ");
-                            }
-                        }
-                        
-                        ddlScript.append(")").append(Constants.SQL.Formatting.SEMICOLON)
-                                .append(Constants.SQL.Formatting.NEW_LINE);
-                    }
-                    ddlScript.append(Constants.SQL.Formatting.NEW_LINE);
-                }
-            }
-            
-        } catch (Exception e) {
-            log.error("Error generating MySQL DDL from DBML: {}", e.getMessage(), e);
-            ddlScript.append(Constants.SQL.Formatting.COMMENT_PREFIX).append("Error generating DDL: ").append(e.getMessage());
-        }
-    }
-    
-    /**
-     * Tạo DDL script PostgreSQL từ DBML
-     */
-    private void generatePostgreSqlDdlFromDbml(String dbmlContent, StringBuilder ddlScript) {
-        // Tương tự như MySQL nhưng sử dụng cú pháp PostgreSQL
-        try {
-            log.debug("Parsing DBML content to generate PostgreSQL DDL");
-            
-            // Tương tự như MySQL nhưng sử dụng cú pháp PostgreSQL
-            List<DbmlTable> tables = parseDbmlContent(dbmlContent);
-            
-            // Chuyển đổi các lệnh tạo bảng sang PostgreSQL
-            // Các bước tương tự như MySQL nhưng sử dụng cú pháp PostgreSQL
-            for (DbmlTable table : tables) {
-                ddlScript.append(Constants.SQL.Formatting.COMMENT_PREFIX).append("Table: ").append(table.getName()).append(Constants.SQL.Formatting.NEW_LINE);
-                ddlScript.append(Constants.SQL.Keywords.CREATE_TABLE_IF_NOT_EXISTS).append(" ")
-                        .append(Constants.SQL.Identifiers.POSTGRESQL_ORACLE_IDENTIFIER_START).append(table.getName())
-                        .append(Constants.SQL.Identifiers.POSTGRESQL_ORACLE_IDENTIFIER_END).append(" ")
-                        .append(Constants.SQL.Formatting.OPEN_PARENTHESIS).append(Constants.SQL.Formatting.NEW_LINE);
-                
-                // Tạo định nghĩa cột với cú pháp PostgreSQL
-                for (int i = 0; i < table.getColumns().size(); i++) {
-                    DbmlColumn column = table.getColumns().get(i);
-                    ddlScript.append("  ")
-                            .append(Constants.SQL.Identifiers.POSTGRESQL_ORACLE_IDENTIFIER_START).append(column.getName())
-                            .append(Constants.SQL.Identifiers.POSTGRESQL_ORACLE_IDENTIFIER_END).append(" ")
-                            .append(convertToPostgresType(column.getType()));
-                    
-                    // Thêm các thuộc tính cột
-                    if (column.isPrimaryKey()) {
-                        ddlScript.append(" PRIMARY KEY");
-                    }
-                    if (column.isNotNull()) {
-                        ddlScript.append(" NOT NULL");
-                    }
-                    if (column.getDefaultValue() != null) {
-                        ddlScript.append(" DEFAULT ").append(column.getDefaultValue());
-                    }
-                    
-                    // Thêm dấu phẩy nếu không phải cột cuối cùng
-                    if (i < table.getColumns().size() - 1) {
-                        ddlScript.append(Constants.SQL.Formatting.COMMA);
-                    }
-                    ddlScript.append(Constants.SQL.Formatting.NEW_LINE);
+                if (column.isUnique()) {
+                    attrs.add("unique");
                 }
                 
-                // Thêm foreign keys với cú pháp PostgreSQL
-                // Logic tương tự như MySQL
+                if (column.isNotNull()) {
+                    attrs.add("not null");
+                }
                 
-                ddlScript.append(Constants.SQL.Formatting.CLOSE_PARENTHESIS).append(Constants.SQL.Formatting.SEMICOLON)
-                        .append(Constants.SQL.Formatting.NEW_LINE).append(Constants.SQL.Formatting.NEW_LINE);
+                if (column.isAutoIncrement()) {
+                    attrs.add("increment");
+                }
+                
+                if (column.getDefaultValue() != null && !column.getDefaultValue().trim().isEmpty()) {
+                    attrs.add("default: \"" + column.getDefaultValue() + "\"");
+                }
+                
+                if (column.getNote() != null && !column.getNote().trim().isEmpty()) {
+                    attrs.add("note: \"" + column.getNote() + "\"");
+                }
+                
+                // Thêm reference nếu có
+                if (column.getReference() != null) {
+                    String refStr = "ref: " + column.getReference().getTableName() + "." + 
+                                   column.getReference().getColumnName();
+                    if (column.getReference().getCardinality() != null) {
+                        refStr = refStr + " " + column.getReference().getCardinality();
+                    }
+                    attrs.add(refStr);
+                }
+                
+                // Thêm attributes vào column type string
+                if (!attrs.isEmpty()) {
+                    columnTypeBuilder.append(" [");
+                    columnTypeBuilder.append(String.join(", ", attrs));
+                    columnTypeBuilder.append("]");
+                }
+                
+                columnDiff.setCurrentType(columnTypeBuilder.toString());
+                // No previous type for new tables
+                
+                columnDiffs.add(columnDiff);
             }
             
-            // Tạo indexes với cú pháp PostgreSQL
-            // Logic tương tự như MySQL
-            
-        } catch (Exception e) {
-            log.error("Error generating PostgreSQL DDL from DBML: {}", e.getMessage(), e);
-            ddlScript.append(Constants.SQL.Formatting.COMMENT_PREFIX).append("Error generating DDL: ").append(e.getMessage());
-        }
-    }
-    
-    /**
-     * Tạo DDL script Oracle từ DBML
-     */
-    private void generateOracleDdlFromDbml(String dbmlContent, StringBuilder ddlScript) {
-        // Tương tự như MySQL nhưng sử dụng cú pháp Oracle
-        try {
-            log.debug("Parsing DBML content to generate Oracle DDL");
-            
-            // Cú pháp Oracle
-            // Thêm logic tương tự như MySQL
-            
-        } catch (Exception e) {
-            log.error("Error generating Oracle DDL from DBML: {}", e.getMessage(), e);
-            ddlScript.append(Constants.SQL.Formatting.COMMENT_PREFIX).append("Error generating DDL: ").append(e.getMessage());
-        }
-    }
-    
-    /**
-     * Tạo DDL script SQL Server từ DBML
-     */
-    private void generateSqlServerDdlFromDbml(String dbmlContent, StringBuilder ddlScript) {
-        // Tương tự như MySQL nhưng sử dụng cú pháp SQL Server
-        try {
-            log.debug("Parsing DBML content to generate SQL Server DDL");
-            
-            // Cú pháp SQL Server
-            // Thêm logic tương tự như MySQL
-            
-        } catch (Exception e) {
-            log.error("Error generating SQL Server DDL from DBML: {}", e.getMessage(), e);
-            ddlScript.append(Constants.SQL.Formatting.COMMENT_PREFIX).append("Error generating DDL: ").append(e.getMessage());
-        }
-    }
-    
-    /**
-     * Parse DBML content thành các đối tượng bảng, cột, index
-     */
-    private List<DbmlTable> parseDbmlContent(String dbmlContent) {
-        log.debug("Parsing DBML content into table structures");
-        
-        // Sử dụng DbmlParserService để parse DBML
-        // Đây là phiên bản đơn giản, bạn có thể mở rộng hoặc sử dụng DbmlParserService đã có
-        
-        // Ví dụ đơn giản:
-        List<DbmlTable> tables = new ArrayList<>();
-        
-        // Giả lập parse DBML content
-        // Trong thực tế, bạn sẽ sử dụng thư viện hoặc service chuyên dụng để parse
-        
-        // Thêm một bảng mẫu để biểu diễn cho ví dụ
-        DbmlTable userTable = new DbmlTable("users");
-        userTable.getColumns().add(new DbmlColumn("id", "INT", true, true, null));
-        userTable.getColumns().add(new DbmlColumn("username", "VARCHAR(50)", false, true, null));
-        userTable.getColumns().add(new DbmlColumn("email", "VARCHAR(100)", false, true, null));
-        userTable.getColumns().add(new DbmlColumn("created_at", "DATETIME", false, false, "CURRENT_TIMESTAMP"));
-        
-        DbmlIndex emailIndex = new DbmlIndex("idx_user_email", true);
-        emailIndex.getColumns().add("email");
-        userTable.getIndexes().add(emailIndex);
-        
-        tables.add(userTable);
-        
-        DbmlTable profileTable = new DbmlTable("profiles");
-        profileTable.getColumns().add(new DbmlColumn("id", "INT", true, true, null));
-        profileTable.getColumns().add(new DbmlColumn("user_id", "INT", false, true, null));
-        profileTable.getColumns().add(new DbmlColumn("bio", "TEXT", false, false, null));
-        
-        DbmlReference ref = new DbmlReference("user_id", "users", "id");
-        profileTable.getReferences().add(ref);
-        
-        tables.add(profileTable);
-        
-        return tables;
-    }
-    
-    /**
-     * Class đại diện cho một bảng DBML
-     */
-    @Data
-    private static class DbmlTable {
-        private String name;
-        private List<DbmlColumn> columns = new ArrayList<>();
-        private List<DbmlReference> references = new ArrayList<>();
-        private List<DbmlIndex> indexes = new ArrayList<>();
-        
-        public DbmlTable(String name) {
-            this.name = name;
-        }
-    }
-    
-    /**
-     * Class đại diện cho một cột DBML
-     */
-    @Data
-    @AllArgsConstructor
-    private static class DbmlColumn {
-        private String name;
-        private String type;
-        private boolean primaryKey;
-        private boolean notNull;
-        private String defaultValue;
-    }
-    
-    /**
-     * Class đại diện cho một tham chiếu ngoại (foreign key) trong DBML
-     */
-    @Data
-    @AllArgsConstructor
-    private static class DbmlReference {
-        private String fromColumn;
-        private String toTable;
-        private String toColumn;
-    }
-    
-    /**
-     * Class đại diện cho một chỉ mục (index) trong DBML
-     */
-    @Data
-    private static class DbmlIndex {
-        private String name;
-        private boolean unique;
-        private List<String> columns = new ArrayList<>();
-        
-        public DbmlIndex(String name, boolean unique) {
-            this.name = name;
-            this.unique = unique;
-        }
-    }
-
-    // Helper method to convert MySQL types to PostgreSQL types
-    private String convertToPostgresType(String mysqlType) {
-        if (mysqlType == null) {
-            return "varchar";
+            tableDiff.setColumnDiffs(columnDiffs);
+            tableDiffs.add(tableDiff);
         }
         
-        String lowerType = mysqlType.toLowerCase().trim();
-        
-        if (lowerType.contains("int")) {
-            return "integer";
-        } else if (lowerType.contains("varchar")) {
-            return lowerType;
-        } else if (lowerType.contains("text")) {
-            return "text";
-        } else if (lowerType.contains("datetime")) {
-            return "timestamp";
-        } else if (lowerType.contains("boolean")) {
-            return "boolean";
-        } else if (lowerType.contains("decimal") || lowerType.contains("numeric")) {
-            return lowerType;
-        } else if (lowerType.contains("blob")) {
-            return "bytea";
-        } else if (lowerType.contains("float") || lowerType.contains("double")) {
-            return "float8";
-        }
-        
-        // Default to varchar if type is unknown
-        return "varchar";
-    }
-
-    // Helper method to convert MySQL types to Oracle types
-    private String convertToOracleType(String mysqlType) {
-        if (mysqlType == null) {
-            return "VARCHAR2(255)";
-        }
-        
-        String lowerType = mysqlType.toLowerCase().trim();
-        
-        if (lowerType.contains("int")) {
-            return "NUMBER";
-        } else if (lowerType.contains("varchar")) {
-            // Extract the size if available
-            if (lowerType.contains("(") && lowerType.contains(")")) {
-                return lowerType.replace("varchar", "VARCHAR2");
-            }
-            return "VARCHAR2(255)";
-        } else if (lowerType.contains("text")) {
-            return "CLOB";
-        } else if (lowerType.contains("datetime")) {
-            return "TIMESTAMP";
-        } else if (lowerType.contains("boolean")) {
-            return "NUMBER(1)";
-        } else if (lowerType.contains("decimal") || lowerType.contains("numeric")) {
-            return lowerType.replace("decimal", "NUMBER").replace("numeric", "NUMBER");
-        } else if (lowerType.contains("blob")) {
-            return "BLOB";
-        } else if (lowerType.contains("float") || lowerType.contains("double")) {
-            return "FLOAT";
-        }
-        
-        // Default to VARCHAR2 if type is unknown
-        return "VARCHAR2(255)";
-    }
-    
-    // Helper method to convert MySQL types to SQL Server types
-    private String convertToSqlServerType(String mysqlType) {
-        if (mysqlType == null) {
-            return "NVARCHAR(255)";
-        }
-        
-        String lowerType = mysqlType.toLowerCase().trim();
-        
-        if (lowerType.contains("int")) {
-            return "INT";
-        } else if (lowerType.contains("varchar")) {
-            // Extract the size if available
-            if (lowerType.contains("(") && lowerType.contains(")")) {
-                return lowerType.replace("varchar", "NVARCHAR");
-            }
-            return "NVARCHAR(255)";
-        } else if (lowerType.contains("text")) {
-            return "NVARCHAR(MAX)";
-        } else if (lowerType.contains("datetime")) {
-            return "DATETIME2";
-        } else if (lowerType.contains("boolean")) {
-            return "BIT";
-        } else if (lowerType.contains("decimal") || lowerType.contains("numeric")) {
-            return lowerType.toUpperCase();
-        } else if (lowerType.contains("blob")) {
-            return "VARBINARY(MAX)";
-        } else if (lowerType.contains("float")) {
-            return "FLOAT";
-        } else if (lowerType.contains("double")) {
-            return "FLOAT(53)";
-        }
-        
-        // Default to NVARCHAR if type is unknown
-        return "NVARCHAR(255)";
+        comparison.setTableDiffs(tableDiffs);
+        return comparison;
     }
 
     @Override
@@ -1371,16 +1069,7 @@ public class VersionServiceImpl implements VersionService {
                 throw BaseException.of(ErrorCode.PROJECT_NOT_FOUND);
             }
             
-            // Kiểm tra quyền truy cập của người dùng vào dự án
-            String currentUserId = securityUtils.getCurrentUserId();
-            Integer permission = projectAccessService.checkUserAccess(request.getProjectId(), currentUserId);
-            
-            if (permission == null) {
-                log.error("User {} does not have permission to access project {}", currentUserId, request.getProjectId());
-                throw BaseException.of(ErrorCode.PROJECT_ACCESS_DENIED, HttpStatus.FORBIDDEN);
-            }
-            
-            // Tìm changelog theo mã code
+            // Tìm changelog theo changeLogCode
             ChangeLog changeLog = changeLogRepository.findByProjectIdAndCodeChangeLog(request.getProjectId(), request.getChangeLogCode())
                     .orElseThrow(() -> {
                         log.error("Changelog not found with Project ID: {} and Code: {}", 
@@ -1397,47 +1086,38 @@ public class VersionServiceImpl implements VersionService {
             
             log.debug("Found DBML content with length: {} bytes", dbmlContent.length());
             
-            // Tạo DDL script từ DBML
+            // Parse DBML content thành DbmlModel
+            DbmlModel dbmlModel = dbmlParserService.parseDbml(dbmlContent);
+            log.debug("Parsed DBML successfully - found {} tables", dbmlModel.getTables().size());
+            
+            // Chuyển đổi DbmlModel thành VersionComparisonDTO để sử dụng với GeneraScriptDDLService
+            VersionComparisonDTO versionComparison = convertDbmlModelToVersionComparison(dbmlModel);
+            
+            // Get project information for detailed header
+            Project project = getAndCheckProject(request.getProjectId());
+            
+            // Tạo DDL script sử dụng GeneraScriptDDLService
             StringBuilder ddlScript = new StringBuilder();
             
             // Xác định tên dialect
             String dialectName = getDialectName(request.getDialect());
             
-            // Thêm header comment
-            ddlScript.append(Constants.SQL.Formatting.COMMENT_PREFIX).append("DDL Script for project: ").append(request.getProjectId())
-                    .append(Constants.SQL.Formatting.NEW_LINE).append(Constants.SQL.Formatting.COMMENT_PREFIX).append("Changelog Code: ").append(request.getChangeLogCode())
-                    .append(Constants.SQL.Formatting.NEW_LINE).append(Constants.SQL.Formatting.COMMENT_PREFIX).append("Dialect: ").append(dialectName)
-                    .append(Constants.SQL.Formatting.NEW_LINE).append(Constants.SQL.Formatting.NEW_LINE);
+            // Generate detailed header for changelog DDL
+            ddlScript.append(generateChangeLogDdlHeader(project, changeLog, dialectName, request.getChangeLogCode()));
             
-            // Parse DBML content và tạo DDL
-            switch (request.getDialect()) {
-                case Constants.SQL.Dialect.MYSQL:
-                case Constants.SQL.Dialect.MARIADB:
-                    generateMySqlDdlFromDbml(dbmlContent, ddlScript);
-                    break;
-                case Constants.SQL.Dialect.POSTGRESQL:
-                    generatePostgreSqlDdlFromDbml(dbmlContent, ddlScript);
-                    break;
-                case Constants.SQL.Dialect.ORACLE:
-                    generateOracleDdlFromDbml(dbmlContent, ddlScript);
-                    break;
-                case Constants.SQL.Dialect.SQL_SERVER:
-                    generateSqlServerDdlFromDbml(dbmlContent, ddlScript);
-                    break;
-                default:
-                    // Mặc định sử dụng MySQL
-                    generateMySqlDdlFromDbml(dbmlContent, ddlScript);
-                    break;
-            }
+            // Sử dụng GeneraScriptDDLService để tạo DDL
+            String generatedDdl = generaScriptDDLService.generateDDL(versionComparison, request.getDialect());
+            ddlScript.append(generatedDdl);
             
             log.info("DDL script generated successfully with length: {} characters", ddlScript.length());
             
-            // Tạo response
-            return DdlScriptResponse.builder()
-                    .projectId(request.getProjectId())
-                    .dialect(request.getDialect())
-                    .ddlScript(ddlScript.toString())
-                    .build();
+            // Sử dụng mapper để tạo response
+            // Tạo một SingleVersionDdlRequest tạm thời để sử dụng với mapper có sẵn
+            SingleVersionDdlRequest tempRequest = new SingleVersionDdlRequest();
+            tempRequest.setProjectId(request.getProjectId());
+            tempRequest.setDialect(request.getDialect());
+            tempRequest.setVersionNumber(1); // Default version for changelog
+            return ddlScriptResponseMapper.toSingleVersionDdlResponse(tempRequest, ddlScript.toString());
         } catch (BaseException e) {
             log.error("Base exception occurred during changelog DDL script generation: {}", e.getMessage());
             throw e;
@@ -1467,5 +1147,235 @@ public class VersionServiceImpl implements VersionService {
     }
     private void logCreateDDLSuccess(String ddlScript) {
         log.info("DDL script generated successfully with length: {} characters", ddlScript.length());
+    }
+
+    /**
+     * Generate detailed header for update DDL scripts
+     */
+    private String generateUpdateDdlHeader(Project project, Version fromVersion, Version toVersion, 
+                                         String dialectName, DdlScriptRequest request) {
+        StringBuilder header = new StringBuilder();
+        
+        // Title
+        header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+              .append("=== DATABASE UPDATE DDL SCRIPT ===")
+              .append(Constants.SQL.Formatting.NEW_LINE);
+        
+        // Project information
+        header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+              .append("Project Code: ").append(project.getProjectCode())
+              .append(Constants.SQL.Formatting.NEW_LINE);
+        
+        // Owner information
+        Users owner = null;
+        if (project.getOwnerId() != null) {
+            owner = userRepository.findById(project.getOwnerId()).orElse(null);
+        }
+        header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+              .append("Owner: ").append(owner != null ? owner.getFullName() : "Unknown")
+              .append(Constants.SQL.Formatting.NEW_LINE);
+        
+        // Version information
+        header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+              .append("From Version: ").append(request.getFromVersion() != null ? request.getFromVersion() : "Initial")
+              .append(Constants.SQL.Formatting.NEW_LINE);
+        
+        header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+              .append("To Version: ").append(request.getToVersion() != null ? request.getToVersion() : "Latest")
+              .append(Constants.SQL.Formatting.NEW_LINE);
+        
+        // Version creator/modifier information
+        if (toVersion != null) {
+            Users creator = null;
+            if (toVersion.getCreatedBy() != null) {
+                creator = userRepository.findById(toVersion.getCreatedBy()).orElse(null);
+            }
+            header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+                  .append("Version Creator: ").append(creator != null ? creator.getFullName() : "Unknown")
+                  .append(Constants.SQL.Formatting.NEW_LINE);
+            
+            Users modifier = null;
+            if (toVersion.getModifiedBy() != null) {
+                modifier = userRepository.findById(toVersion.getModifiedBy()).orElse(null);
+            }
+            header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+                  .append("Last Modified By: ").append(modifier != null ? modifier.getFullName() : "Unknown")
+                  .append(Constants.SQL.Formatting.NEW_LINE);
+            
+            // Creation time
+            header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+                  .append("Created Time: ").append(toVersion.getCreatedDate() != null ? toVersion.getCreatedDate().toString() : "Unknown")
+                  .append(Constants.SQL.Formatting.NEW_LINE);
+        }
+        
+        // Technical information
+        header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+              .append("Database Dialect: ").append(dialectName)
+              .append(Constants.SQL.Formatting.NEW_LINE);
+        
+        header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+              .append("Generated At: ").append(java.time.LocalDateTime.now().toString())
+              .append(Constants.SQL.Formatting.NEW_LINE);
+        
+        header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+              .append("=====================================")
+              .append(Constants.SQL.Formatting.NEW_LINE)
+              .append(Constants.SQL.Formatting.NEW_LINE);
+        
+        return header.toString();
+    }
+
+    /**
+     * Generate detailed header for create database DDL scripts
+     */
+    private String generateCreateDdlHeader(Project project, Version version, ChangeLog changeLog, 
+                                         String dialectName, Integer versionNumber) {
+        StringBuilder header = new StringBuilder();
+        
+        // Title
+        header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+              .append("=== DATABASE CREATION DDL SCRIPT ===")
+              .append(Constants.SQL.Formatting.NEW_LINE);
+        
+        // Project information
+        header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+              .append("Project Code: ").append(project.getProjectCode())
+              .append(Constants.SQL.Formatting.NEW_LINE);
+        
+        // Owner information
+        Users owner = null;
+        if (project.getOwnerId() != null) {
+            owner = userRepository.findById(project.getOwnerId()).orElse(null);
+        }
+        header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+              .append("Owner: ").append(owner != null ? owner.getFullName() : "Unknown")
+              .append(Constants.SQL.Formatting.NEW_LINE);
+        
+        // Version information
+        header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+              .append("Version: ").append(versionNumber)
+              .append(Constants.SQL.Formatting.NEW_LINE);
+        
+        // Version creator/modifier information
+        if (version != null) {
+            Users creator = null;
+            if (version.getCreatedBy() != null) {
+                creator = userRepository.findById(version.getCreatedBy()).orElse(null);
+            }
+            header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+                  .append("Version Creator: ").append(creator != null ? creator.getFullName() : "Unknown")
+                  .append(Constants.SQL.Formatting.NEW_LINE);
+            
+            Users modifier = null;
+            if (version.getModifiedBy() != null) {
+                modifier = userRepository.findById(version.getModifiedBy()).orElse(null);
+            }
+            header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+                  .append("Last Modified By: ").append(modifier != null ? modifier.getFullName() : "Unknown")
+                  .append(Constants.SQL.Formatting.NEW_LINE);
+            
+            // Creation time
+            header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+                  .append("Created Time: ").append(version.getCreatedDate() != null ? version.getCreatedDate().toString() : "Unknown")
+                  .append(Constants.SQL.Formatting.NEW_LINE);
+        }
+        
+        // Changelog information
+        if (changeLog != null) {
+            Users changeLogCreator = null;
+            if (changeLog.getCreatedBy() != null) {
+                changeLogCreator = userRepository.findById(changeLog.getCreatedBy()).orElse(null);
+            }
+            header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+                  .append("Changelog Creator: ").append(changeLogCreator != null ? changeLogCreator.getFullName() : "Unknown")
+                  .append(Constants.SQL.Formatting.NEW_LINE);
+        }
+        
+        // Technical information
+        header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+              .append("Database Dialect: ").append(dialectName)
+              .append(Constants.SQL.Formatting.NEW_LINE);
+        
+        header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+              .append("Generated At: ").append(java.time.LocalDateTime.now().toString())
+              .append(Constants.SQL.Formatting.NEW_LINE);
+        
+        header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+              .append("=====================================")
+              .append(Constants.SQL.Formatting.NEW_LINE)
+              .append(Constants.SQL.Formatting.NEW_LINE);
+        
+        return header.toString();
+    }
+
+    /**
+     * Generate detailed header for changelog DDL scripts
+     */
+    private String generateChangeLogDdlHeader(Project project, ChangeLog changeLog, 
+                                            String dialectName, String changeLogCode) {
+        StringBuilder header = new StringBuilder();
+        
+        // Title
+        header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+              .append("=== CHANGELOG DDL SCRIPT ===")
+              .append(Constants.SQL.Formatting.NEW_LINE);
+        
+        // Project information
+        header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+              .append("Project Code: ").append(project.getProjectCode())
+              .append(Constants.SQL.Formatting.NEW_LINE);
+        
+        // Owner information
+        Users owner = null;
+        if (project.getOwnerId() != null) {
+            owner = userRepository.findById(project.getOwnerId()).orElse(null);
+        }
+        header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+              .append("Owner: ").append(owner != null ? owner.getFullName() : "Unknown")
+              .append(Constants.SQL.Formatting.NEW_LINE);
+        
+        // Changelog information
+        header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+              .append("Changelog Code: ").append(changeLogCode)
+              .append(Constants.SQL.Formatting.NEW_LINE);
+        
+        if (changeLog != null) {
+            Users creator = null;
+            if (changeLog.getCreatedBy() != null) {
+                creator = userRepository.findById(changeLog.getCreatedBy()).orElse(null);
+            }
+            header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+                  .append("Changelog Creator: ").append(creator != null ? creator.getFullName() : "Unknown")
+                  .append(Constants.SQL.Formatting.NEW_LINE);
+            
+            Users modifier = null;
+            if (changeLog.getModifiedBy() != null) {
+                modifier = userRepository.findById(changeLog.getModifiedBy()).orElse(null);
+            }
+            header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+                  .append("Last Modified By: ").append(modifier != null ? modifier.getFullName() : "Unknown")
+                  .append(Constants.SQL.Formatting.NEW_LINE);
+            
+            // Creation time
+            header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+                  .append("Created Time: ").append(changeLog.getCreatedDate() != null ? changeLog.getCreatedDate().toString() : "Unknown")
+                  .append(Constants.SQL.Formatting.NEW_LINE);
+        }
+        
+        // Technical information
+        header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+              .append("Database Dialect: ").append(dialectName)
+              .append(Constants.SQL.Formatting.NEW_LINE);
+        
+        header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+              .append("Generated At: ").append(java.time.LocalDateTime.now().toString())
+              .append(Constants.SQL.Formatting.NEW_LINE);
+        
+        header.append(Constants.SQL.Formatting.COMMENT_PREFIX)
+              .append("=====================================")
+              .append(Constants.SQL.Formatting.NEW_LINE)
+              .append(Constants.SQL.Formatting.NEW_LINE);
+        
+        return header.toString();
     }
 } 

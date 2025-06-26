@@ -31,20 +31,19 @@ public class GeneralScriptDDLServiceImpl implements GeneraScriptDDLService {
     public String generateDDL(VersionComparisonDTO versionComparison, int sqlType) {
         // Switch based on the SQL type
         switch (sqlType) {
-            case Constants.SQL.Dialect.MYSQL, Constants.SQL.Dialect.MARIADB->{
+            case Constants.SQL.Dialect.MYSQL, Constants.SQL.Dialect.MARIADB -> {
                 return generateMysqlDDL(versionComparison);
             }
-            case Constants.SQL.Dialect.POSTGRESQL->{
-                return null;
+            case Constants.SQL.Dialect.POSTGRESQL -> {
+                return generatePostgreSQLDDL(versionComparison);
             }
             case Constants.SQL.Dialect.ORACLE -> {
                 return generateOracleDDL(versionComparison);
             }
-            case Constants.SQL.Dialect.SQL_SERVER->{
-                return null;
+            case Constants.SQL.Dialect.SQL_SERVER -> {
+                return generateSqlServerDDL(versionComparison);
             }
             default -> throw new IllegalArgumentException("Unsupported SQL type: " + sqlType);
-
         }
     }
 
@@ -78,11 +77,11 @@ public class GeneralScriptDDLServiceImpl implements GeneraScriptDDLService {
         return ddlScript.toString();
     }
     private String generateMysqlDDL(VersionComparisonDTO versionComparison) {
-        // Implement Oracle DDL generation logic here
+        // Implement MySQL DDL generation logic here
 
         StringBuilder ddlScript = new StringBuilder();
 
-        log.info("Start generating Oracle DDL script");
+        log.info("Start generating MySQL DDL script");
         versionComparison.getTableDiffs().forEach(diff -> {
             // Check the type of difference and generate an appropriate DDL
             switch (diff.getDiffType()) {
@@ -110,23 +109,25 @@ public class GeneralScriptDDLServiceImpl implements GeneraScriptDDLService {
 
     // Implementations for Oracle DDL generation methods
     private String createTableDDLOracle(VersionComparisonDTO.TableDiff tableDiff) {
-        // Implement logic to create DDL for table creation
         StringBuilder ddl = new StringBuilder();
-        ddl.append("-- ").append(SqlKeywords.DDL.CREATE_TABLE).append(SPACE).append(tableDiff.getTableName()).append(NEXT_LINE);
-        ddl.append(SqlKeywords.DDL.CREATE_TABLE).append(" ").append(tableDiff.getTableName()).append(" (");
+        String tableName = tableDiff.getTableName();
+        
+        ddl.append("-- ").append(SqlKeywords.DDL.CREATE_TABLE).append(SPACE).append(tableName).append(NEXT_LINE);
+        ddl.append(SqlKeywords.DDL.CREATE_TABLE).append(SPACE).append(tableName).append(SPACE).append(OPEN_BRACKET).append(NEXT_LINE);
+        
         for (VersionComparisonDTO.ColumnDiff columnDiff : tableDiff.getColumnDiffs()) {
             ParsedField parsedField = parse(columnDiff.getCurrentType());
-            ddl.append(columnDiff.getColumnName()).append(SPACE).append(parsedField.getDataType());
-            // Append attributes if any
+            ddl.append(TAB).append(columnDiff.getColumnName()).append(SPACE).append(parsedField.getDataType());
+            
             if(DataUtils.notNull(parsedField.getAttributes())) {
                 for (Map.Entry<String, Object> entry : parsedField.getAttributes().entrySet()) {
-                    String key = checkKeyword(entry.getKey());
-
-                    ddl.append(SPACE).append(key).append(SPACE);
+                    String attributeStr = processAttribute(entry.getKey(), entry.getValue());
+                    if (!attributeStr.isEmpty()) {
+                        ddl.append(SPACE).append(attributeStr);
+                    }
                 }
             }
             ddl.append(COMMA).append(NEXT_LINE);
-            log.info("Column name: {}, column type: {}", columnDiff.getColumnName(), columnDiff.getColumnName());
         }
         ddl.append(CLOSE_BRACKET).append(SEMICOLON).append(NEXT_LINE);
         return ddl.toString();
@@ -140,80 +141,54 @@ public class GeneralScriptDDLServiceImpl implements GeneraScriptDDLService {
         return ddl.toString();
     }
     private String modifyTableDDLOracle(VersionComparisonDTO.TableDiff tableDiff) {
-        // Implement logic to create DDL for table modification
         StringBuilder ddl = new StringBuilder();
-
-        // generate DDL for adding columns
-        StringBuilder ddlModifyTypeAdd = new StringBuilder();
-        ddlModifyTypeAdd.append("-- ").append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(NEXT_LINE);
-        ddlModifyTypeAdd.append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(SPACE);
-        ddlModifyTypeAdd.append(SqlKeywords.ModifiersType.ADD).append(SPACE).append(OPEN_BRACKET).append(NEXT_LINE);
-
-        // generate DDL for removing columns
-        StringBuilder ddlModifyTypeRemove = new StringBuilder();
-        ddlModifyTypeRemove.append("-- ").append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(NEXT_LINE);
-        // generate DDL for modifying columns
-        StringBuilder ddlModifyTypeModify = new StringBuilder();
-        ddlModifyTypeModify.append("-- ").append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(NEXT_LINE);
-        ddlModifyTypeModify.append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(SPACE);
-        ddlModifyTypeModify.append(SqlKeywords.ModifiersType.MODIFY).append(SPACE).append(OPEN_BRACKET).append(NEXT_LINE);
-        int countRemove = 0;
-        int countModify = 0;
-        int countAdd = 0;
-
+        
         for (VersionComparisonDTO.ColumnDiff columnDiff : tableDiff.getColumnDiffs()) {
-            // filter type modified
-            if(Objects.equals(columnDiff.getDiffType().name(), VersionComparisonDTO.DiffType.REMOVED.name())) {
-                countRemove++;
-                ddlModifyTypeRemove.append(SqlKeywords.DDL.ALTER_TABLE)
-                        .append(SPACE)
-                        .append(tableDiff.getTableName())
-                        .append(SPACE)
-                        .append(SqlKeywords.DDL.DROP_COLUMN)
-                        .append(SPACE)
-                        .append(columnDiff.getColumnName())
-                        .append(SEMICOLON)
-                        .append(NEXT_LINE);
-            }
-            else if(Objects.equals(columnDiff.getDiffType().name(), VersionComparisonDTO.DiffType.ADDED.name())) {
-                countAdd++;
-                ParsedField parsedField = parse(columnDiff.getCurrentType());
-                ddlModifyTypeAdd.append(columnDiff.getColumnName()).append(SPACE).append(parsedField.getDataType());
-                // Append attributes if any
-                if(DataUtils.notNull(parsedField.getAttributes())) {
-                    for (Map.Entry<String, Object> entry : parsedField.getAttributes().entrySet()) {
-                        String key = checkKeyword(entry.getKey());
-
-                        ddlModifyTypeAdd.append(SPACE).append(key).append(SPACE);
+            switch (columnDiff.getDiffType()) {
+                case REMOVED:
+                    ddl.append("-- ").append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(NEXT_LINE);
+                    ddl.append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName())
+                       .append(SPACE).append(SqlKeywords.DDL.DROP_COLUMN).append(SPACE)
+                       .append(columnDiff.getColumnName()).append(SEMICOLON).append(NEXT_LINE);
+                    break;
+                case ADDED:
+                    ParsedField parsedFieldAdd = parse(columnDiff.getCurrentType());
+                    if(DataUtils.isNull(parsedFieldAdd)) throw BaseException.of(ErrorCode.PARSE_FIELD_ERROR);
+                    ddl.append("-- ").append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(NEXT_LINE);
+                    ddl.append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(SPACE)
+                       .append(SqlKeywords.ModifiersType.ADD).append(SPACE)
+                       .append(columnDiff.getColumnName()).append(SPACE).append(parsedFieldAdd.getDataType());
+                    
+                    if(DataUtils.notNull(parsedFieldAdd.getAttributes())) {
+                        for (Map.Entry<String, Object> entry : parsedFieldAdd.getAttributes().entrySet()) {
+                            String attributeStr = processAttribute(entry.getKey(), entry.getValue());
+                            if (!attributeStr.isEmpty()) {
+                                ddl.append(SPACE).append(attributeStr);
+                            }
+                        }
                     }
-                }
-                ddlModifyTypeAdd.append(SEMICOLON).append(NEXT_LINE);
-            } else if(Objects.equals(columnDiff.getDiffType().name(), VersionComparisonDTO.DiffType.MODIFIED.name())) {
-                countModify++;
-                ParsedField parsedField = parse(columnDiff.getCurrentType());
-                ddlModifyTypeModify.append(columnDiff.getColumnName()).append(SPACE).append(parsedField.getDataType()).append(SPACE);
-                if(DataUtils.notNull(parsedField.getAttributes())) {
-                    for (Map.Entry<String, Object> entry : parsedField.getAttributes().entrySet()) {
-                        String key = checkKeyword(entry.getKey());
-                        ddlModifyTypeModify.append(SPACE).append(key).append(SPACE);
+                    ddl.append(SEMICOLON).append(NEXT_LINE);
+                    break;
+                case MODIFIED:
+                    ParsedField parsedFieldMod = parse(columnDiff.getCurrentType());
+                    ddl.append("-- ").append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(NEXT_LINE);
+                    ddl.append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(SPACE)
+                       .append(SqlKeywords.ModifiersType.MODIFY).append(SPACE)
+                       .append(columnDiff.getColumnName()).append(SPACE)
+                       .append(parsedFieldMod.getDataType());
+                    
+                    if(DataUtils.notNull(parsedFieldMod.getAttributes())) {
+                        for (Map.Entry<String, Object> entry : parsedFieldMod.getAttributes().entrySet()) {
+                            String attributeStr = processAttribute(entry.getKey(), entry.getValue());
+                            if (!attributeStr.isEmpty()) {
+                                ddl.append(SPACE).append(attributeStr);
+                            }
+                        }
                     }
-                }
-                ddlModifyTypeModify.append(SEMICOLON).append(NEXT_LINE);
+                    ddl.append(SEMICOLON).append(NEXT_LINE);
+                    break;
             }
         }
-
-        ddlModifyTypeAdd.append(CLOSE_BRACKET).append(NEXT_LINE);
-        ddlModifyTypeModify.append(CLOSE_BRACKET).append(NEXT_LINE);
-        if(countRemove > 0) {
-            ddl.append(ddlModifyTypeRemove).append(NEXT_LINE);
-        }
-        if (countAdd > 0) {
-            ddl.append(ddlModifyTypeAdd).append(NEXT_LINE);
-        }
-        if(countModify > 0) {
-            ddl.append(ddlModifyTypeModify).append(NEXT_LINE);
-        }
-        ddl.append("-- END");
         return ddl.toString();
     }
 
@@ -230,17 +205,18 @@ public class GeneralScriptDDLServiceImpl implements GeneraScriptDDLService {
                 .append(NEXT_LINE);
 
         for (VersionComparisonDTO.ColumnDiff columnDiff : tableDiff.getColumnDiffs()) {
-            StringBuilder columnBuilder = new StringBuilder(SPACE);
             ParsedField parsedField = parse(columnDiff.getCurrentType());
 
             // Thêm tên cột và kiểu dữ liệu
-            columnBuilder.append(columnDiff.getColumnName()).append(SPACE).append(parsedField.getDataType());
+            ddl.append(TAB).append(columnDiff.getColumnName()).append(SPACE).append(parsedField.getDataType());
 
             // Xử lý các thuộc tính (attributes)
             if (DataUtils.notNull(parsedField.getAttributes())) {
                 for (Map.Entry<String, Object> attribute : parsedField.getAttributes().entrySet()) {
-                    String key = checkKeyword(attribute.getKey());
-                    ddl.append(SPACE).append(key);
+                    String attributeStr = processAttribute(attribute.getKey(), attribute.getValue());
+                    if (!attributeStr.isEmpty()) {
+                        ddl.append(SPACE).append(attributeStr);
+                    }
                 }
             }
             ddl.append(COMMA).append(NEXT_LINE);
@@ -253,69 +229,71 @@ public class GeneralScriptDDLServiceImpl implements GeneraScriptDDLService {
         // Implement logic to create DDL for table modification
         StringBuilder ddl = new StringBuilder();
 
-        // generate DDL for adding columns
+        // generate DDL for each column diff separately
         StringBuilder ddlModifyTypeAdd = new StringBuilder();
-        ddlModifyTypeAdd.append("-- ").append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(NEXT_LINE);
-        ddlModifyTypeAdd.append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(SPACE);
-        ddlModifyTypeAdd.append(SqlKeywords.ModifiersType.ADD).append(SPACE).append(NEXT_LINE);
-
-        // generate DDL for removing columns
         StringBuilder ddlModifyTypeRemove = new StringBuilder();
-        ddlModifyTypeRemove.append("-- ").append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(NEXT_LINE);
-        // generate DDL for modifying columns
         StringBuilder ddlModifyTypeModify = new StringBuilder();
-        ddlModifyTypeModify.append("-- ").append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(NEXT_LINE);
-        ddlModifyTypeModify.append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(SPACE);
-        ddlModifyTypeModify.append(SqlKeywords.ModifiersType.MODIFY).append(SPACE).append(OPEN_BRACKET).append(NEXT_LINE);
         int countRemove = 0;
         int countModify = 0;
         int countAdd = 0;
 
         for (VersionComparisonDTO.ColumnDiff columnDiff : tableDiff.getColumnDiffs()) {
-            // filter type modified
-            if(Objects.equals(columnDiff.getDiffType().name(), VersionComparisonDTO.DiffType.REMOVED.name())) {
-                countRemove++;
-                ddlModifyTypeRemove.append(SqlKeywords.DDL.ALTER_TABLE)
-                        .append(SPACE)
-                        .append(tableDiff.getTableName())
-                        .append(SPACE)
-                        .append(SqlKeywords.DDL.DROP_COLUMN)
-                        .append(SPACE)
-                        .append(columnDiff.getColumnName())
-                        .append(SEMICOLON)
-                        .append(NEXT_LINE);
-            }
-            else if(Objects.equals(columnDiff.getDiffType().name(), VersionComparisonDTO.DiffType.ADDED.name())) {
-                countAdd++;
-                ParsedField parsedField = parse(columnDiff.getCurrentType());
-                if(DataUtils.isNull(parsedField)) throw BaseException.of(ErrorCode.PARSE_FIELD_ERROR);
-                ddlModifyTypeAdd.append(TAB).append(SqlKeywords.DDL.ADD_COLUMN).append(SPACE)
-                        .append(columnDiff.getColumnName()).append(SPACE)
-                        .append(parsedField.getDataType());
-                // Append attributes if any
-                if(DataUtils.notNull(parsedField.getAttributes())) {
-                    for (Map.Entry<String, Object> entry : parsedField.getAttributes().entrySet()) {
-                        String key = checkKeyword(entry.getKey());
-                        ddlModifyTypeAdd.append(SPACE).append(key).append(SPACE);
+            switch (columnDiff.getDiffType()) {
+                case REMOVED:
+                    countRemove++;
+                    ddlModifyTypeRemove.append("-- ").append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(NEXT_LINE);
+                    ddlModifyTypeRemove.append(SqlKeywords.DDL.ALTER_TABLE)
+                            .append(SPACE)
+                            .append(tableDiff.getTableName())
+                            .append(SPACE)
+                            .append(SqlKeywords.DDL.DROP_COLUMN)
+                            .append(SPACE)
+                            .append(columnDiff.getColumnName())
+                            .append(SEMICOLON)
+                            .append(NEXT_LINE);
+                    break;
+                case ADDED:
+                    countAdd++;
+                    ParsedField parsedFieldAdd = parse(columnDiff.getCurrentType());
+                    if(DataUtils.isNull(parsedFieldAdd)) throw BaseException.of(ErrorCode.PARSE_FIELD_ERROR);
+                    ddlModifyTypeAdd.append("-- ").append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(NEXT_LINE);
+                    ddlModifyTypeAdd.append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(SPACE)
+                            .append(SqlKeywords.DDL.ADD_COLUMN).append(SPACE)
+                            .append(columnDiff.getColumnName()).append(SPACE)
+                            .append(parsedFieldAdd.getDataType());
+                    
+                    if(DataUtils.notNull(parsedFieldAdd.getAttributes())) {
+                        for (Map.Entry<String, Object> entry : parsedFieldAdd.getAttributes().entrySet()) {
+                            String attributeStr = processAttribute(entry.getKey(), entry.getValue());
+                            if (!attributeStr.isEmpty()) {
+                                ddlModifyTypeAdd.append(SPACE).append(attributeStr);
+                            }
+                        }
                     }
-                }
-                ddlModifyTypeAdd.append(SEMICOLON).append(NEXT_LINE);
-            } else if(Objects.equals(columnDiff.getDiffType().name(), VersionComparisonDTO.DiffType.MODIFIED.name())) {
-                countModify++;
-                ParsedField parsedField = parse(columnDiff.getCurrentType());
-                ddlModifyTypeModify.append(TAB).append(columnDiff.getColumnName()).append(SPACE).append(parsedField.getDataType()).append(SPACE);
-                if(DataUtils.notNull(parsedField.getAttributes())) {
-                    for (Map.Entry<String, Object> entry : parsedField.getAttributes().entrySet()) {
-                        String key = checkKeyword(entry.getKey());
-                        ddlModifyTypeModify.append(SPACE).append(key).append(SPACE);
+                    ddlModifyTypeAdd.append(SEMICOLON).append(NEXT_LINE);
+                    break;
+                case MODIFIED:
+                    countModify++;
+                    ParsedField parsedFieldMod = parse(columnDiff.getCurrentType());
+                    ddlModifyTypeModify.append("-- ").append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(NEXT_LINE);
+                    ddlModifyTypeModify.append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(SPACE)
+                            .append("MODIFY COLUMN").append(SPACE)
+                            .append(columnDiff.getColumnName()).append(SPACE)
+                            .append(parsedFieldMod.getDataType());
+                    
+                    if(DataUtils.notNull(parsedFieldMod.getAttributes())) {
+                        for (Map.Entry<String, Object> entry : parsedFieldMod.getAttributes().entrySet()) {
+                            String attributeStr = processAttribute(entry.getKey(), entry.getValue());
+                            if (!attributeStr.isEmpty()) {
+                                ddlModifyTypeModify.append(SPACE).append(attributeStr);
+                            }
+                        }
                     }
-                }
-                ddlModifyTypeModify.append(SEMICOLON).append(NEXT_LINE);
+                    ddlModifyTypeModify.append(SEMICOLON).append(NEXT_LINE);
+                    break;
             }
         }
 
-        ddlModifyTypeAdd.append(NEXT_LINE);
-        ddlModifyTypeModify.append(CLOSE_BRACKET).append(NEXT_LINE);
         if(countRemove > 0) {
             ddl.append(ddlModifyTypeRemove).append(NEXT_LINE);
         }
@@ -325,7 +303,202 @@ public class GeneralScriptDDLServiceImpl implements GeneraScriptDDLService {
         if(countModify > 0) {
             ddl.append(ddlModifyTypeModify).append(NEXT_LINE);
         }
-        ddl.append("-- END");
+        return ddl.toString();
+    }
+
+    // PostgreSQL DDL generation methods
+    private String generatePostgreSQLDDL(VersionComparisonDTO versionComparison) {
+        StringBuilder ddlScript = new StringBuilder();
+
+        log.info("Start generating PostgreSQL DDL script");
+        versionComparison.getTableDiffs().forEach(diff -> {
+            switch (diff.getDiffType()) {
+                case ADDED:
+                    String ddl = createTableDDLPostgreSQL(diff);
+                    ddlScript.append(ddl).append(NEXT_LINE);
+                    break;
+                case REMOVED:
+                    String dropDdl = removeTableDDLPostgreSQL(diff);
+                    ddlScript.append(dropDdl).append(NEXT_LINE);
+                    break;
+                case MODIFIED:
+                    String modifyDdl = modifyTableDDLPostgreSQL(diff);
+                    ddlScript.append(modifyDdl).append(NEXT_LINE);
+                    break;
+            }
+        });
+        return ddlScript.toString();
+    }
+
+    private String createTableDDLPostgreSQL(VersionComparisonDTO.TableDiff tableDiff) {
+        String tableName = tableDiff.getTableName();
+        StringBuilder ddl = new StringBuilder();
+        
+        ddl.append("-- ").append(SqlKeywords.DDL.CREATE_TABLE).append(SPACE).append(tableName).append(NEXT_LINE);
+        ddl.append(SqlKeywords.DDL.CREATE_TABLE).append(SPACE).append(tableName).append(SPACE).append(OPEN_BRACKET).append(NEXT_LINE);
+
+        for (VersionComparisonDTO.ColumnDiff columnDiff : tableDiff.getColumnDiffs()) {
+            ParsedField parsedField = parse(columnDiff.getCurrentType());
+            ddl.append(TAB).append(columnDiff.getColumnName()).append(SPACE).append(parsedField.getDataType());
+            
+            if (DataUtils.notNull(parsedField.getAttributes())) {
+                for (Map.Entry<String, Object> attribute : parsedField.getAttributes().entrySet()) {
+                    String attributeStr = processAttribute(attribute.getKey(), attribute.getValue());
+                    if (!attributeStr.isEmpty()) {
+                        ddl.append(SPACE).append(attributeStr);
+                    }
+                }
+            }
+            ddl.append(COMMA).append(NEXT_LINE);
+        }
+        ddl.append(CLOSE_BRACKET).append(SEMICOLON).append(NEXT_LINE);
+        return ddl.toString();
+    }
+
+    private String removeTableDDLPostgreSQL(VersionComparisonDTO.TableDiff tableDiff) {
+        StringBuilder ddl = new StringBuilder();
+        ddl.append("-- ").append(SqlKeywords.DDL.DROP_TABLE).append(SPACE).append(tableDiff.getTableName()).append(NEXT_LINE);
+        ddl.append(SqlKeywords.DDL.DROP_TABLE).append(SPACE).append(tableDiff.getTableName()).append(SEMICOLON).append(NEXT_LINE);
+        return ddl.toString();
+    }
+
+    private String modifyTableDDLPostgreSQL(VersionComparisonDTO.TableDiff tableDiff) {
+        StringBuilder ddl = new StringBuilder();
+        
+        for (VersionComparisonDTO.ColumnDiff columnDiff : tableDiff.getColumnDiffs()) {
+            switch (columnDiff.getDiffType()) {
+                case REMOVED:
+                    ddl.append("-- ").append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(NEXT_LINE);
+                    ddl.append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName())
+                       .append(SPACE).append(SqlKeywords.DDL.DROP_COLUMN).append(SPACE)
+                       .append(columnDiff.getColumnName()).append(SEMICOLON).append(NEXT_LINE);
+                    break;
+                case ADDED:
+                    ParsedField parsedFieldAdd = parse(columnDiff.getCurrentType());
+                    if(DataUtils.isNull(parsedFieldAdd)) throw BaseException.of(ErrorCode.PARSE_FIELD_ERROR);
+                    ddl.append("-- ").append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(NEXT_LINE);
+                    ddl.append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName())
+                       .append(SPACE).append(SqlKeywords.DDL.ADD_COLUMN).append(SPACE)
+                       .append(columnDiff.getColumnName()).append(SPACE).append(parsedFieldAdd.getDataType());
+                    
+                    if(DataUtils.notNull(parsedFieldAdd.getAttributes())) {
+                        for (Map.Entry<String, Object> entry : parsedFieldAdd.getAttributes().entrySet()) {
+                            String attributeStr = processAttribute(entry.getKey(), entry.getValue());
+                            if (!attributeStr.isEmpty()) {
+                                ddl.append(SPACE).append(attributeStr);
+                            }
+                        }
+                    }
+                    ddl.append(SEMICOLON).append(NEXT_LINE);
+                    break;
+                case MODIFIED:
+                    ParsedField parsedFieldMod = parse(columnDiff.getCurrentType());
+                    ddl.append("-- ").append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(NEXT_LINE);
+                    ddl.append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName())
+                       .append(SPACE).append("ALTER COLUMN").append(SPACE)
+                       .append(columnDiff.getColumnName()).append(SPACE).append("TYPE").append(SPACE)
+                       .append(parsedFieldMod.getDataType()).append(SEMICOLON).append(NEXT_LINE);
+                    break;
+            }
+        }
+        return ddl.toString();
+    }
+
+    // SQL Server DDL generation methods
+    private String generateSqlServerDDL(VersionComparisonDTO versionComparison) {
+        StringBuilder ddlScript = new StringBuilder();
+
+        log.info("Start generating SQL Server DDL script");
+        versionComparison.getTableDiffs().forEach(diff -> {
+            switch (diff.getDiffType()) {
+                case ADDED:
+                    String ddl = createTableDDLSqlServer(diff);
+                    ddlScript.append(ddl).append(NEXT_LINE);
+                    break;
+                case REMOVED:
+                    String dropDdl = removeTableDDLSqlServer(diff);
+                    ddlScript.append(dropDdl).append(NEXT_LINE);
+                    break;
+                case MODIFIED:
+                    String modifyDdl = modifyTableDDLSqlServer(diff);
+                    ddlScript.append(modifyDdl).append(NEXT_LINE);
+                    break;
+            }
+        });
+        return ddlScript.toString();
+    }
+
+    private String createTableDDLSqlServer(VersionComparisonDTO.TableDiff tableDiff) {
+        String tableName = tableDiff.getTableName();
+        StringBuilder ddl = new StringBuilder();
+        
+        ddl.append("-- ").append(SqlKeywords.DDL.CREATE_TABLE).append(SPACE).append(tableName).append(NEXT_LINE);
+        ddl.append(SqlKeywords.DDL.CREATE_TABLE).append(SPACE).append(tableName).append(SPACE).append(OPEN_BRACKET).append(NEXT_LINE);
+
+        for (VersionComparisonDTO.ColumnDiff columnDiff : tableDiff.getColumnDiffs()) {
+            ParsedField parsedField = parse(columnDiff.getCurrentType());
+            ddl.append(TAB).append(columnDiff.getColumnName()).append(SPACE).append(parsedField.getDataType());
+            
+            if (DataUtils.notNull(parsedField.getAttributes())) {
+                for (Map.Entry<String, Object> attribute : parsedField.getAttributes().entrySet()) {
+                    String attributeStr = processAttribute(attribute.getKey(), attribute.getValue());
+                    if (!attributeStr.isEmpty()) {
+                        ddl.append(SPACE).append(attributeStr);
+                    }
+                }
+            }
+            ddl.append(COMMA).append(NEXT_LINE);
+        }
+        ddl.append(CLOSE_BRACKET).append(SEMICOLON).append(NEXT_LINE);
+        return ddl.toString();
+    }
+
+    private String removeTableDDLSqlServer(VersionComparisonDTO.TableDiff tableDiff) {
+        StringBuilder ddl = new StringBuilder();
+        ddl.append("-- ").append(SqlKeywords.DDL.DROP_TABLE).append(SPACE).append(tableDiff.getTableName()).append(NEXT_LINE);
+        ddl.append(SqlKeywords.DDL.DROP_TABLE).append(SPACE).append(tableDiff.getTableName()).append(SEMICOLON).append(NEXT_LINE);
+        return ddl.toString();
+    }
+
+    private String modifyTableDDLSqlServer(VersionComparisonDTO.TableDiff tableDiff) {
+        StringBuilder ddl = new StringBuilder();
+        
+        for (VersionComparisonDTO.ColumnDiff columnDiff : tableDiff.getColumnDiffs()) {
+            switch (columnDiff.getDiffType()) {
+                case REMOVED:
+                    ddl.append("-- ").append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(NEXT_LINE);
+                    ddl.append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName())
+                       .append(SPACE).append(SqlKeywords.DDL.DROP_COLUMN).append(SPACE)
+                       .append(columnDiff.getColumnName()).append(SEMICOLON).append(NEXT_LINE);
+                    break;
+                case ADDED:
+                    ParsedField parsedFieldAdd = parse(columnDiff.getCurrentType());
+                    if(DataUtils.isNull(parsedFieldAdd)) throw BaseException.of(ErrorCode.PARSE_FIELD_ERROR);
+                    ddl.append("-- ").append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(NEXT_LINE);
+                    ddl.append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName())
+                       .append(SPACE).append(SqlKeywords.DDL.ADD_COLUMN).append(SPACE)
+                       .append(columnDiff.getColumnName()).append(SPACE).append(parsedFieldAdd.getDataType());
+                    
+                    if(DataUtils.notNull(parsedFieldAdd.getAttributes())) {
+                        for (Map.Entry<String, Object> entry : parsedFieldAdd.getAttributes().entrySet()) {
+                            String attributeStr = processAttribute(entry.getKey(), entry.getValue());
+                            if (!attributeStr.isEmpty()) {
+                                ddl.append(SPACE).append(attributeStr);
+                            }
+                        }
+                    }
+                    ddl.append(SEMICOLON).append(NEXT_LINE);
+                    break;
+                case MODIFIED:
+                    ParsedField parsedFieldMod = parse(columnDiff.getCurrentType());
+                    ddl.append("-- ").append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName()).append(NEXT_LINE);
+                    ddl.append(SqlKeywords.DDL.ALTER_TABLE).append(SPACE).append(tableDiff.getTableName())
+                       .append(SPACE).append("ALTER COLUMN").append(SPACE)
+                       .append(columnDiff.getColumnName()).append(SPACE)
+                       .append(parsedFieldMod.getDataType()).append(SEMICOLON).append(NEXT_LINE);
+                    break;
+            }
+        }
         return ddl.toString();
     }
 
@@ -425,28 +598,208 @@ public class GeneralScriptDDLServiceImpl implements GeneraScriptDDLService {
         return result;
     }
     private String checkKeyword(String keyword) {
-        switch (keyword.toUpperCase()) {
-            case SqlKeywords.KeySqlConstant.PK_KEY, SqlKeywords.Constraints.PRIMARY_KEY -> {
-                return SqlKeywords.Constraints.PRIMARY_KEY;
-            }
-            case SqlKeywords.Constraints.NOT_NULL -> {
-                return SqlKeywords.Constraints.NOT_NULL;
-            }
-            case SqlKeywords.Constraints.DEFAULT -> {
-                return SqlKeywords.Constraints.DEFAULT;
-            }
-            case SqlKeywords.Constraints.INDEX -> {
-                return SqlKeywords.Constraints.INDEX;
-            }
-            case SqlKeywords.Constraints.REFERENCES -> {
-                return SqlKeywords.Constraints.REFERENCES;
-            }
-            case SqlKeywords.Constraints.UNIQUE -> {
-                return SqlKeywords.Constraints.UNIQUE;
-            }
-            default -> throw BaseException.of(ErrorCode.KEYWORD_NOT_ALLOWED);
-
+        if (keyword == null || keyword.trim().isEmpty()) {
+            return "";
+        }
+        
+        String upperKeyword = keyword.toUpperCase().trim();
+        
+        // Primary Key variants
+        if (upperKeyword.equals(SqlKeywords.KeySqlConstant.PK_KEY) || 
+            upperKeyword.equals(SqlKeywords.Constraints.PRIMARY_KEY) ||
+            upperKeyword.equals("PRIMARY_KEY")) {
+            return SqlKeywords.Constraints.PRIMARY_KEY;
+        }
+        
+        // Not Null variants  
+        if (upperKeyword.equals(SqlKeywords.Constraints.NOT_NULL) ||
+            upperKeyword.equals("NOT-NULL") ||
+            upperKeyword.equals("NOTNULL")) {
+            return SqlKeywords.Constraints.NOT_NULL;
+        }
+        
+        // Unique constraint
+        if (upperKeyword.equals(SqlKeywords.Constraints.UNIQUE)) {
+            return SqlKeywords.Constraints.UNIQUE;
+        }
+        
+        // Default constraint
+        if (upperKeyword.equals(SqlKeywords.Constraints.DEFAULT)) {
+            return SqlKeywords.Constraints.DEFAULT;
+        }
+        
+        // Index
+        if (upperKeyword.equals(SqlKeywords.Constraints.INDEX)) {
+            return SqlKeywords.Constraints.INDEX;
+        }
+        
+        // Foreign Key and References
+        if (upperKeyword.equals(SqlKeywords.Constraints.REFERENCES) ||
+            upperKeyword.equals(SqlKeywords.Constraints.FOREIGN_KEY) ||
+            upperKeyword.equals("FOREIGN_KEY") ||
+            upperKeyword.equals("FK")) {
+            return SqlKeywords.Constraints.REFERENCES;
+        }
+        
+        // Check constraint
+        if (upperKeyword.equals(SqlKeywords.Constraints.CHECK)) {
+            return SqlKeywords.Constraints.CHECK;
+        }
+        
+        // Auto Increment variants
+        if (upperKeyword.equals("AUTO_INCREMENT") ||
+            upperKeyword.equals("AUTOINCREMENT") ||
+            upperKeyword.equals("IDENTITY") ||
+            upperKeyword.equals("INCREMENT") ||
+            upperKeyword.equals("SERIAL")) {
+            return "AUTO_INCREMENT";
+        }
+        
+        // Null constraint
+        if (upperKeyword.equals("NULL") ||
+            upperKeyword.equals("NULLABLE")) {
+            return "NULL";
+        }
+        
+        // Common database-specific keywords
+        switch (upperKeyword) {
+            // MySQL specific
+            case "UNSIGNED":
+                return "UNSIGNED";
+            case "ZEROFILL":
+                return "ZEROFILL";
+            case "BINARY":
+                return "BINARY";
+            case "ASCII":
+                return "ASCII";
+            case "UNICODE":
+                return "UNICODE";
+                
+            // Oracle specific  
+            case "ENABLE":
+                return "ENABLE";
+            case "DISABLE":
+                return "DISABLE";
+            case "VALIDATE":
+                return "VALIDATE";
+            case "NOVALIDATE":
+                return "NOVALIDATE";
+                
+            // PostgreSQL specific
+            case "GENERATED":
+                return "GENERATED";
+            case "ALWAYS":
+                return "ALWAYS";
+            case "BY":
+                return "BY";
+            case "STORED":
+                return "STORED";
+            case "VIRTUAL":
+                return "VIRTUAL";
+                
+            // SQL Server specific
+            case "ROWGUIDCOL":
+                return "ROWGUIDCOL";
+            case "SPARSE":
+                return "SPARSE";
+            case "FILESTREAM":
+                return "FILESTREAM";
+                
+            // Common constraints and modifiers
+            case "COMMENT":
+                return "COMMENT";
+            case "COLLATE":
+                return "COLLATE";
+            case "CHARACTER":
+                return "CHARACTER";
+            case "SET":
+                return "SET";
+            case "ON":
+                return "ON";
+            case "UPDATE":
+                return "ON UPDATE";
+            case "DELETE":
+                return "ON DELETE";
+            case "CASCADE":
+                return "CASCADE";
+            case "RESTRICT":
+                return "RESTRICT";
+            case "NO":
+                return "NO";
+            case "ACTION":
+                return "ACTION";
+                
+            // For keywords with values (like note, default with values)
+            case "NOTE":
+                return ""; // Notes are usually handled differently
+                
+            default:
+                // Instead of throwing exception, log warning and return the keyword as-is
+                log.warn("Unknown SQL keyword encountered: {}. Using as-is.", keyword);
+                return keyword.toUpperCase();
         }
     }
 
+    /**
+     * Process attribute with its value for DDL generation
+     * @param key attribute name
+     * @param value attribute value  
+     * @return formatted DDL string for the attribute
+     */
+    private String processAttribute(String key, Object value) {
+        if (key == null || key.trim().isEmpty()) {
+            return "";
+        }
+        
+        String upperKey = key.toUpperCase().trim();
+        String processedKey = checkKeyword(key);
+        
+        // Handle attributes that don't need values in DDL
+        if (processedKey.equals(SqlKeywords.Constraints.PRIMARY_KEY) ||
+            processedKey.equals(SqlKeywords.Constraints.NOT_NULL) ||
+            processedKey.equals(SqlKeywords.Constraints.UNIQUE) ||
+            processedKey.equals("AUTO_INCREMENT") ||
+            processedKey.equals("UNSIGNED") ||
+            processedKey.equals("ZEROFILL")) {
+            return processedKey;
+        }
+        
+        // Handle attributes that need values
+        if (value != null && !value.toString().trim().isEmpty()) {
+            String valueStr = value.toString().trim();
+            
+            switch (upperKey) {
+                case "DEFAULT":
+                    return SqlKeywords.Constraints.DEFAULT + SPACE + valueStr;
+                case "COMMENT":
+                    return "COMMENT" + SPACE + SINGLE_QUOTE + valueStr + SINGLE_QUOTE;
+                case "NOTE":
+                    // Notes are typically not included in DDL, return empty
+                    return "";
+                case "REF":
+                case "REFERENCES":
+                    return SqlKeywords.Constraints.REFERENCES + SPACE + valueStr;
+                case "CHECK":
+                    return SqlKeywords.Constraints.CHECK + SPACE + OPEN_BRACKET + valueStr + CLOSE_BRACKET;
+                case "COLLATE":
+                    return "COLLATE" + SPACE + valueStr;
+                default:
+                    // For other attributes with values, include both key and value
+                    if (Boolean.TRUE.equals(value)) {
+                        return processedKey;
+                    } else {
+                        return processedKey + SPACE + valueStr;
+                    }
+            }
+        }
+        
+        // If no value but the key is valid, return just the key
+        if (!processedKey.isEmpty()) {
+            return processedKey;
+        }
+        
+        return "";
+    }
+
 }
+
