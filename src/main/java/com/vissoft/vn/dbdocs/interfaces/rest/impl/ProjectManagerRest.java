@@ -4,7 +4,10 @@ import com.vissoft.vn.dbdocs.application.dto.ProjectCreateRequest;
 import com.vissoft.vn.dbdocs.application.dto.ProjectDTO;
 import com.vissoft.vn.dbdocs.application.dto.ProjectResponse;
 import com.vissoft.vn.dbdocs.application.dto.ProjectUpdateRequest;
+import com.vissoft.vn.dbdocs.application.dto.LatestProjectVersionResponse;
+import com.vissoft.vn.dbdocs.application.dto.VersionDTO;
 import com.vissoft.vn.dbdocs.domain.service.ProjectManagerService;
+import com.vissoft.vn.dbdocs.domain.service.VersionService;
 import com.vissoft.vn.dbdocs.infrastructure.security.SecurityUtils;
 import com.vissoft.vn.dbdocs.interfaces.rest.ProjectManagerOperator;
 import com.vissoft.vn.dbdocs.interfaces.rest.dto.InputPasswordShare;
@@ -23,6 +26,7 @@ import java.util.List;
 public class ProjectManagerRest implements ProjectManagerOperator {
 
     private final ProjectManagerService projectManagerService;
+    private final VersionService versionService;
 
     /**
      * Creates a new project.
@@ -97,6 +101,24 @@ public class ProjectManagerRest implements ProjectManagerOperator {
     public ResponseEntity<List<ProjectResponse>> getSharedProjects() {
         log.info("REST request to get shared projects for user: {}", SecurityUtils.getCurrentUserId());
         return ResponseEntity.ok(projectManagerService.getSharedProjects());
+    }
+
+    /**
+     * Retrieves latest version information (with changelog) of the given project.
+     */
+    @Override
+    public ResponseEntity<LatestProjectVersionResponse> getLastestVersionByProjectId(String projectId) {
+        log.info("REST request to get latest version for project: {}", projectId);
+
+        ProjectDTO project = projectManagerService.getProjectById(projectId);
+        VersionDTO version = versionService.getLatestVersionByProjectId(projectId);
+
+        LatestProjectVersionResponse response = LatestProjectVersionResponse.builder()
+                .project(project)
+                .version(version)
+                .build();
+
+        return ResponseEntity.ok(response);
     }
 
     /**

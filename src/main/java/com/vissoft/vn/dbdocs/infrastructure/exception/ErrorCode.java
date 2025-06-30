@@ -34,6 +34,10 @@ public enum ErrorCode {
     VERSION_NOT_FOUND,
     INVALID_VERSION,
 
+    // Refresh Token errors
+    REFRESH_TOKEN_NOT_FOUND,
+    REFRESH_TOKEN_EXPIRED,
+
     ERROR_PARSING_DBML,
     KEYWORD_NOT_ALLOWED,
     PARSE_FIELD_ERROR

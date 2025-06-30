@@ -13,6 +13,13 @@ public interface VersionService {
     VersionDTO createVersion(VersionCreateRequest request);
     VersionDTO getVersionById(String versionId);
     List<VersionDTO> getVersionsByProjectId(String projectId);
+    /**
+     * Get latest version of a project including its changelog information.
+     *
+     * @param projectId the id of project.
+     * @return VersionDTO representing latest version.
+     */
+    VersionDTO getLatestVersionByProjectId(String projectId);
     DdlScriptResponse generateDdlScript(DdlScriptRequest request);
     DdlScriptResponse generateSingleVersionDdl(SingleVersionDdlRequest request);
     DdlScriptResponse generateChangeLogDdl(ChangeLogDdlRequest request);

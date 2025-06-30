@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 
 import com.vissoft.vn.dbdocs.application.service.SocialLoginService;
 import com.vissoft.vn.dbdocs.infrastructure.config.JwtConfig;
+import com.vissoft.vn.dbdocs.application.dto.AuthResponse;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -56,7 +57,7 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
         log.info("OAuth2 login success - provider: {}, socialId: {}, email/username: {}, name: {}", 
                 provider, socialId, email, name);
 
-        String token = socialLoginService.handleSocialLogin(
+        AuthResponse authResponse = socialLoginService.handleSocialLogin(
                 socialId,
                 email,
                 name,
@@ -71,8 +72,10 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
         }
         
         // Redirect về frontend với token trong query parameters
-        String redirectUrl = frontendUrl + "auth/callback?token=" + token + 
-                           "&tokenType=Bearer&expiresIn=" + jwtConfig.getExpiration() +
+        String redirectUrl = frontendUrl + "auth/callback?token=" + authResponse.getAccessToken() + 
+                           "&refreshToken=" + authResponse.getRefreshToken() +
+                           "&tokenType=" + authResponse.getTokenType() + 
+                           "&expiresIn=" + authResponse.getExpiresIn() +
                            "&provider=" + provider;
         
         log.info("OAuth2 login success for provider: {}, redirecting to: {}", provider, redirectUrl);

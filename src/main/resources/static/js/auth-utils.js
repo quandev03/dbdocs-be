@@ -15,6 +15,10 @@ const AuthUtils = {
         localStorage.setItem('token', tokenData.accessToken);
         localStorage.setItem('tokenType', tokenData.tokenType || 'Bearer');
         
+        if (tokenData.refreshToken) {
+            localStorage.setItem('refreshToken', tokenData.refreshToken);
+        }
+        
         if (tokenData.expiresIn) {
             const expiryTime = Date.now() + parseInt(tokenData.expiresIn);
             localStorage.setItem('tokenExpiry', expiryTime);
@@ -32,16 +36,54 @@ const AuthUtils = {
         return {
             accessToken: token,
             tokenType: localStorage.getItem('tokenType') || 'Bearer',
+            refreshToken: localStorage.getItem('refreshToken'),
             expiresIn: localStorage.getItem('expiresIn'),
             expiryTime: localStorage.getItem('tokenExpiry')
         };
     },
     
     /**
+     * Refresh access token using refresh token
+     * @returns {Promise} Promise resolves to new token data
+     */
+    refreshAccessToken: async function() {
+        const refreshToken = localStorage.getItem('refreshToken');
+        if (!refreshToken) {
+            throw new Error('No refresh token available');
+        }
+        
+        try {
+            const response = await fetch('/api/v1/auth/refresh', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    refreshToken: refreshToken
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to refresh token');
+            }
+            
+            const tokenData = await response.json();
+            this.saveToken(tokenData);
+            
+            console.log('Token refreshed successfully');
+            return tokenData;
+        } catch (error) {
+            console.error('Error refreshing token:', error);
+            this.logout();
+            throw error;
+        }
+    },
+    
+    /**
      * Kiểm tra user đã đăng nhập chưa
      * @returns {Boolean} 
      */
-    isAuthenticated: function() {
+    isAuthenticated: async function() {
         const token = this.getToken();
         if (!token) return false;
         
@@ -49,8 +91,14 @@ const AuthUtils = {
         if (token.expiryTime) {
             const now = Date.now();
             if (now > parseInt(token.expiryTime)) {
-                this.logout();
-                return false;
+                // Try to refresh token before logging out
+                try {
+                    await this.refreshAccessToken();
+                    return true;
+                } catch (error) {
+                    this.logout();
+                    return false;
+                }
             }
         }
         
@@ -63,6 +111,7 @@ const AuthUtils = {
     logout: function() {
         localStorage.removeItem('token');
         localStorage.removeItem('tokenType');
+        localStorage.removeItem('refreshToken');
         localStorage.removeItem('expiresIn');
         localStorage.removeItem('tokenExpiry');
     },

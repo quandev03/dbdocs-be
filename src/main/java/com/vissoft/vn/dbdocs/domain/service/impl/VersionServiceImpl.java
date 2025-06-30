@@ -1127,6 +1127,28 @@ public class VersionServiceImpl implements VersionService {
         }
     }
 
+    /**
+     * Get latest version of a project, including its changelog details, wrapped as VersionDTO.
+     * Delegates to existing getVersionById to reuse mapping logic.
+     */
+    @Override
+    public VersionDTO getLatestVersionByProjectId(String projectId) {
+        log.info("Fetching latest version for project: {}", projectId);
+
+        // Ensure project exists and user has access (reuse existing helper)
+        getAndCheckProject(projectId);
+
+        return versionRepository.findLatestVersionByProjectId(projectId)
+                .map(version -> {
+                    // Reuse existing mapping logic by calling getVersionById
+                    return getVersionById(version.getId());
+                })
+                .orElseThrow(() -> {
+                    log.error("No versions found for project: {}", projectId);
+                    return BaseException.of(ErrorCode.VERSION_NOT_FOUND);
+                });
+    }
+
     private Project getAndCheckProject(String projectId) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> {

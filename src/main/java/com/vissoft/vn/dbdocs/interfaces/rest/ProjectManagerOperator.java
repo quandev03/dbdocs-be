@@ -4,6 +4,7 @@ import com.vissoft.vn.dbdocs.application.dto.ProjectCreateRequest;
 import com.vissoft.vn.dbdocs.application.dto.ProjectDTO;
 import com.vissoft.vn.dbdocs.application.dto.ProjectResponse;
 import com.vissoft.vn.dbdocs.application.dto.ProjectUpdateRequest;
+import com.vissoft.vn.dbdocs.application.dto.LatestProjectVersionResponse;
 import com.vissoft.vn.dbdocs.interfaces.rest.dto.InputPasswordShare;
 import com.vissoft.vn.dbdocs.interfaces.rest.dto.ShareDbDocsDto;
 import com.vissoft.vn.dbdocs.interfaces.rest.dto.ShareDbDocsRequest;
@@ -180,6 +181,15 @@ public interface ProjectManagerOperator {
     )
     @GetMapping("/shared")
     ResponseEntity<List<ProjectResponse>> getSharedProjects();
+
+    /**
+     * Retrieves the latest version information of a project together with its changelog.
+     *
+     * @param projectId ID of the project
+     * @return ResponseEntity containing project information and its latest version
+     */
+    @GetMapping("/{projectId}/lastest-version")
+    ResponseEntity<LatestProjectVersionResponse> getLastestVersionByProjectId(@PathVariable String projectId);
 
     /**
      * Deletes a project by its ID.

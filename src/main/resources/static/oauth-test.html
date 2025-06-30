@@ -88,6 +88,10 @@
                     localStorage.setItem('tokenType', event.data.tokenType);
                     localStorage.setItem('expiresIn', event.data.expiresIn);
                     
+                    if (event.data.refreshToken) {
+                        localStorage.setItem('refreshToken', event.data.refreshToken);
+                    }
+                    
                     console.log('Token saved to localStorage');
                 }
             }, false);

@@ -8,6 +8,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.vissoft.vn.dbdocs.domain.entity.Users;
 import com.vissoft.vn.dbdocs.domain.repository.UserRepository;
 import com.vissoft.vn.dbdocs.infrastructure.security.JwtTokenProvider;
+import com.vissoft.vn.dbdocs.application.dto.AuthResponse;
+import com.vissoft.vn.dbdocs.infrastructure.config.JwtConfig;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,9 +21,10 @@ public class SocialLoginService {
 
     private final UserRepository userRepository;
     private final JwtTokenProvider jwtTokenProvider;
+    private final JwtConfig jwtConfig;
 
     @Transactional
-    public String handleSocialLogin(String socialId, String email, String fullName, String avatarUrl, Integer provider) {
+    public AuthResponse handleSocialLogin(String socialId, String email, String fullName, String avatarUrl, Integer provider) {
         log.info("Handling social login - socialId: {}, email: {}, fullName: {}, provider: {}", 
                 socialId, email, fullName, provider);
         
@@ -62,6 +65,19 @@ public class SocialLoginService {
             userRepository.save(user);
         }
         
-        return jwtTokenProvider.generateToken(user.getUserId(), user.getEmail());
+        // Generate access token
+        String accessToken = jwtTokenProvider.generateToken(user.getUserId(), user.getEmail());
+        
+        // Generate JWT refresh token
+        String refreshToken = jwtTokenProvider.generateRefreshToken(user.getUserId(), user.getEmail());
+        
+        log.info("Generated tokens for user: {}", user.getUserId());
+        
+        return AuthResponse.builder()
+                .accessToken(accessToken)
+                .refreshToken(refreshToken)
+                .tokenType("Bearer")
+                .expiresIn(jwtConfig.getExpiration())
+                .build();
     }
 } 
